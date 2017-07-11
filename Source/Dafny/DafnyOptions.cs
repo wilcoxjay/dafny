@@ -93,6 +93,7 @@ namespace Microsoft.Dafny
       false
 #endif
     ;
+    public bool CivlizedDafny = false;
 
     protected override bool ParseOption(string name, Bpl.CommandLineOptionEngine.CommandLineParseState ps) {
       var args = ps.args;  // convenient synonym
@@ -298,6 +299,11 @@ namespace Microsoft.Dafny
 
         case "ironDafny": {
             IronDafny = true;
+            return true;
+        }
+
+        case "civlized": {
+            CivlizedDafny = true;
             return true;
         }
 
@@ -554,6 +560,7 @@ namespace Microsoft.Dafny
   /disableScopes
                 Treat all export sets as 'export reveal *'. i.e. don't hide function bodies
                 or type definitions during translation.
+  /civlized     Enable Civlized Dafny mode, which supports reasoning about multithreaded programs.
 ");
       base.Usage();  // also print the Boogie options
     }

@@ -1,8 +1,10 @@
 using System;
 using System.Collections.Generic;
 using System.Diagnostics.Contracts;
+using static Microsoft.Dafny.Predicate;
 using Bpl = Microsoft.Boogie;
 using IToken = Microsoft.Boogie.IToken;
+using Token = Microsoft.Boogie.Token;
 
 namespace Microsoft.Dafny
 {
@@ -1919,6 +1921,405 @@ namespace Microsoft.Dafny
       }
     }
   }
+
+  public class ActionRewriter : IRewriter
+  {
+
+    public BuiltIns BuiltIns;
+    
+    public ActionRewriter(BuiltIns builtins, ErrorReporter reporter)
+      : base(reporter) {
+      Contract.Requires(reporter != null);
+      BuiltIns = builtins;
+    }
+
+    protected static Type ReferToType(string name, List<Type> optTypeArgs = null) {
+      return new UserDefinedType(Token.NoToken, name, optTypeArgs);
+    }
+    protected static TopLevelDecl DeclareTotalState(ModuleDefinition m) {
+      var formals = new List<Formal>();
+      formals.Add(new Formal(Token.NoToken, "shared", ReferToType("SharedState"), true, false));
+      formals.Add(new Formal(Token.NoToken, "locals", new MapType(false, ReferToType("Tid"), ReferToType("L")), true, false));
+
+      return new IndDatatypeDecl(Token.NoToken, "TotalState", m, 
+                                 new List<TypeParameter>() { new TypeParameter(Token.NoToken, "L") },
+                                 new List<DatatypeCtor> { new DatatypeCtor(Token.NoToken, "TotalState", formals, null) },
+                                 null);
+    }
+
+    public static Type ReferToLocalState(string name) {
+      return ReferToType("LocalState", new List<Type> {
+        ReferToType(PCBaseName(name)),
+        ReferToType(LocalName(name))
+      });
+    }
+
+    public static Type ReferToTotalState(string name) {
+      return ReferToType("TotalState", new List<Type> {
+        ReferToLocalState(name)
+      });
+    }
+
+    protected static TopLevelDecl DeclareLocalState(ModuleDefinition m) {
+      var formals = new List<Formal>();
+      formals.Add(new Formal(Token.NoToken, "pc", ReferToType("PC"), true, false));
+      formals.Add(new Formal(Token.NoToken, "local", ReferToType("L"), true, false));
+
+      return new IndDatatypeDecl(Token.NoToken, "LocalState", m, 
+                                 new List<TypeParameter>() {  new TypeParameter(Token.NoToken, "PC"), new TypeParameter(Token.NoToken, "L") },
+                                 new List<DatatypeCtor> { new DatatypeCtor(Token.NoToken, "LocalState", formals, null) },
+                                 null);
+    }
+
+    protected static IndDatatypeDecl DeclareSharedState(ModuleDefinition m, List<Field> sharedFields) {
+      var sharedFormals = new List<Formal>();
+      foreach (Field f in sharedFields) {
+        sharedFormals.Add(new Formal(f.tok, f.Name, f.Type, true, false));
+      }
+
+      return new IndDatatypeDecl(Token.NoToken, "SharedState", m, new List<TypeParameter>(),
+                                 new List<DatatypeCtor> { new DatatypeCtor(Token.NoToken, "SharedState", sharedFormals, null) },
+                                 null);
+    }
+
+    protected static TopLevelDecl DeclareTid(ModuleDefinition m) {
+      return new TypeSynonymDecl(Token.NoToken, "Tid", TypeParameter.EqualitySupportValue.Unspecified, new List<TypeParameter>(), m, new IntType(), null);
+    }
+
+    public static string LocalName(string name) {
+      return name + "Local";
+    }
+
+    public static TopLevelDecl DeclareLocalState(ModuleDefinition parentModule, string name, List<LocalVariable> locals) {
+      var formals = new List<Formal>();
+      foreach (LocalVariable lv in locals) {
+        formals.Add(new Formal(lv.Tok, lv.Name, lv.OptionalType, true, false));
+      }
+
+      return new IndDatatypeDecl(Token.NoToken, LocalName(name), parentModule, new List<TypeParameter>(),
+                                 new List<DatatypeCtor> { new DatatypeCtor(Token.NoToken, LocalName(name), formals, null) },
+                                 null);
+    }
+    public static string PCBaseName(string name) {
+      return name + "PC";
+    }
+
+    public static string PCName(string name, int i) {
+      return PCBaseName(name) + i;
+    }
+
+    public static TopLevelDecl DeclarePC(ModuleDefinition parentModule, string name, int n) {
+      var ctors = new List<DatatypeCtor>();
+      for (var i = 0; i < n; i++) {
+        ctors.Add(new DatatypeCtor(Token.NoToken, PCName(name, i), new List<Formal>(), null));
+      }
+      return new IndDatatypeDecl(Token.NoToken, PCBaseName(name), parentModule, new List<TypeParameter>(),
+                                 ctors, null);
+    }
+    
+    internal override void PreResolve(ModuleDefinition m) {
+      var newDecls = new List<TopLevelDecl>();
+      newDecls.Add(DeclareTid(m));
+      newDecls.Add(DeclareLocalState(m));
+      newDecls.Add(DeclareTotalState(m));
+      
+      foreach (var d in m.TopLevelDecls) {
+        if (d is ClassDecl) {
+          var c = (ClassDecl) d;
+          if (c.IsDefaultClass) {
+            var sharedFields = new List<Field>();
+            var sharedNames = new HashSet<string>();
+
+            foreach (MemberDecl member in c.Members) {
+              if (member is Field) {
+                var f = (Field) member;
+                sharedFields.Add(f);
+                sharedNames.Add(f.Name);
+              }
+            }
+
+            var sharedState = DeclareSharedState(m, sharedFields);
+            newDecls.Add(sharedState);
+            var apCloner = new ActionPredicateCloner(BuiltIns, reporter, sharedState, sharedNames);
+
+            var newMembers = new List<MemberDecl>();
+            var oldMembers = new List<MemberDecl>();
+            oldMembers.AddRange(sharedFields);
+
+            var actionPredicates = new HashSet<string>();
+
+            foreach (MemberDecl member in c.Members) {
+              if (member is ActionPredicate) {
+                var ap = (ActionPredicate) member;
+                oldMembers.Add(ap);
+                newMembers.Add(apCloner.CloneActionPredicate(ap));
+                actionPredicates.Add(ap.Name);
+              }
+            }
+
+            var amCloner = new ActionMethodCloner(BuiltIns, reporter, sharedState, sharedNames, actionPredicates, m, newDecls);
+            foreach (MemberDecl member in c.Members) {
+              if (member is ActionMethod) {
+                var am = (ActionMethod) member;
+                oldMembers.Add(am);
+                newMembers.Add(amCloner.CloneActionMethod(am));
+              }
+            }
+
+            foreach (var mem in oldMembers) {
+              c.Members.Remove(mem);
+            }
+            c.Members.AddRange(newMembers);
+          }
+        }
+      }
+
+      m.TopLevelDecls.AddRange(newDecls);
+    }
+  }
+
+  class ActionPredicateCloner : Cloner {
+
+    protected ErrorReporter Reporter;
+    protected IndDatatypeDecl SharedState;
+    protected Type SharedStateType;
+    protected ISet<string> SharedNames;
+    protected BuiltIns BuiltIns;
+
+    public ActionPredicateCloner(BuiltIns builtins, ErrorReporter reporter, IndDatatypeDecl sharedState, ISet<string> sharedNames)
+      : base() {
+      Reporter = reporter;
+      SharedState = sharedState;
+      SharedStateType = new UserDefinedType(Token.NoToken, SharedState.Name, null);
+      SharedNames = sharedNames;
+      BuiltIns = builtins;
+    }
+
+    public Expression ReferencePreState(IToken tok, string name) {
+      return new ExprDotName(tok, new NameSegment(tok, "s", null), name, null);
+    }
+
+    public Expression ReferencePostState(IToken tok, string name) {
+      return new ExprDotName(tok, new NameSegment(tok, "s'", null), name, null);
+    }
+
+    public override Expression CloneExpr(Expression expr) {
+      if (expr is OldExpr) {
+        var E = ((OldExpr) expr).E;
+        if (E is NameSegment) {
+          var ns = (NameSegment)E;
+          if (SharedNames.Contains(ns.Name)) {
+            return ReferencePreState(E.tok, ns.Name);
+          }
+        }
+        Reporter.Error(MessageSource.Rewriter, expr.tok, "old() can only be applied to shared variables inside an action.");
+      } else if (expr is NameSegment) {
+        var ns = (NameSegment)expr;
+        if (SharedNames.Contains(ns.Name)) {
+          return ReferencePostState(expr.tok, ns.Name);
+        }
+      }
+
+      return base.CloneExpr(expr);
+    }
+
+    public Function CloneActionPredicate(ActionPredicate ap) {
+      var formals = new List<Formal>();
+      formals.Add(new Formal(Token.NoToken, "s", SharedStateType, true, false));
+      formals.Add(new Formal(Token.NoToken, "s'", SharedStateType, true, false));
+      formals.AddRange(ap.Formals.ConvertAll(CloneFormal));
+      formals.AddRange(ap.Outs.ConvertAll(CloneFormal));
+      var body = CloneExpr(ap.Body);
+      var mod = new HashSet<string>();
+      foreach (var fe in ap.Mod.Expressions) {
+        if (fe.E is NameSegment) {
+          var ns = (NameSegment) fe.E;
+          mod.Add(ns.Name);
+        } else {
+          Reporter.Error(MessageSource.Rewriter, fe.tok, "modifies clause of action can only refer to shared variables");
+        }
+      }
+
+      foreach (var s in SharedNames) {
+        if (!mod.Contains(s)) {
+          var eq = new BinaryExpr(body.tok, BinaryExpr.Opcode.Eq, ReferencePreState(body.tok, s), ReferencePostState(body.tok, s));
+          body = new BinaryExpr(body.tok, BinaryExpr.Opcode.And, body, eq);
+        }
+      }
+
+      BuiltIns.CreateArrowTypeDecl(formals.Count);
+
+      return new Predicate(ap.tok, ap.Name, false, false, true, ap.TypeArgs, formals,
+                           ap.Req, ap.Reads, ap.Ens, ap.Decreases, body, 
+                           BodyOriginKind.OriginalOrInherited, ap.Attributes, 
+                           ap.SignatureEllipsis, ap);
+    }
+  }
+
+  class ActionMethodCloner : Cloner {
+    protected ErrorReporter Reporter;
+    protected IndDatatypeDecl SharedState;
+    protected Type SharedStateType;
+    protected ISet<string> SharedNames;
+    protected ISet<string> ActionPredicates;
+    protected ModuleDefinition ParentModule;
+    protected List<TopLevelDecl> NewDecls;
+    protected BuiltIns BuiltIns;
+
+    public ActionMethodCloner(BuiltIns builtins, ErrorReporter reporter, IndDatatypeDecl sharedState, ISet<string> sharedNames, ISet<string> actionPredicates, ModuleDefinition m, List<TopLevelDecl> newDecls)
+          : base() {
+      Reporter = reporter;
+      SharedState = sharedState;
+      SharedStateType = new UserDefinedType(Token.NoToken, SharedState.Name, null);
+      SharedNames = sharedNames;
+      ActionPredicates = actionPredicates;
+      ParentModule = m;
+      NewDecls = newDecls;
+      BuiltIns = builtins;
+    }
+
+
+    public static Expression ReferToState(string totalStateName) {
+      return
+        new SeqSelectExpr(Token.NoToken, true,
+          new ExprDotName(Token.NoToken, new NameSegment(Token.NoToken, totalStateName, null), "locals", null),
+          new NameSegment(Token.NoToken, "tid", null),
+          null);
+    }
+
+    class BodyCloner : Cloner {
+      protected String TotalStateVarName;
+      public BodyCloner(String name) {
+        TotalStateVarName = name;
+      }
+
+      public override Expression CloneExpr(Expression expr) {
+        if (expr is NameSegment) {
+          return new ExprDotName(Token.NoToken, new ExprDotName(Token.NoToken, ReferToState(TotalStateVarName), "local", null), (expr as NameSegment).Name, null);
+        }
+        return base.CloneExpr(expr);
+      }
+    }
+
+    public Function CloneActionMethod(ActionMethod am) {
+      var body = am.Body;
+      var locals = new List<LocalVariable>();
+      var nvars = 0;
+      for (; nvars < body.Body.Count && body.Body[nvars] is VarDeclStmt; nvars++) {
+        var d = (VarDeclStmt)body.Body[nvars];
+        locals.AddRange(d.Locals);
+        if (d.Update != null) {
+          Reporter.Warning(MessageSource.Rewriter, d.Tok, "Initialization of local state is not yet supported. Ignoring this initialization.");
+        }
+        
+      }
+      var nstmts = body.Body.Count - nvars + 1;
+      var pcType = ActionRewriter.DeclarePC(ParentModule, am.Name, nstmts);
+      NewDecls.Add(pcType);
+      var localState = ActionRewriter.DeclareLocalState(ParentModule, am.Name, locals);
+      NewDecls.Add(localState);
+
+      var cases = new List<MatchCaseExpr>();
+      var i = 0;
+      for (; nvars + i < body.Body.Count; i++) {
+        var s = body.Body[nvars + i];
+        if (s is UpdateStmt) {
+          var u = (UpdateStmt)s;
+          if (u.Rhss.Count != 1 || !(u.Rhss[0] is ExprRhs) 
+              || !((u.Rhss[0] as ExprRhs).Expr is ApplySuffix)
+              || !(((u.Rhss[0] as ExprRhs).Expr as ApplySuffix).Lhs is NameSegment)) {
+            Reporter.Warning(MessageSource.Rewriter, s.Tok, "Malformed action call. RHS of update contain exactly one call.");
+          }
+          var callExpr = (u.Rhss[0] as ExprRhs).Expr as ApplySuffix;
+          var calleeName = (callExpr.Lhs as NameSegment).Name;
+          var args = new List<Expression>();
+          // TODO: pass tid as well (and modify action predicates to expect it)
+          args.Add(new ExprDotName(Token.NoToken, new NameSegment(Token.NoToken, "t", null), "shared", null));
+          args.Add(new ExprDotName(Token.NoToken, new NameSegment(Token.NoToken, "t'", null), "shared", null));
+          var preBodyCloner = new BodyCloner("t");
+          foreach (var arg in callExpr.Args) {
+            args.Add(preBodyCloner.CloneExpr(arg));
+          }
+          var postBodyCloner = new BodyCloner("t'");
+          var modifiedVars = new HashSet<string>();
+          foreach (var outVar in u.Lhss) {
+            if (!(outVar is NameSegment)) {
+              Reporter.Warning(MessageSource.Rewriter, outVar.tok, "Action methods can only assign to (local) variables.");
+            } else {
+              NameSegment ns = (NameSegment)outVar;
+              modifiedVars.Add(ns.Name);
+            }
+            args.Add(postBodyCloner.CloneExpr(outVar));
+          }
+          Expression actionPredicateCall = new ApplySuffix(Token.NoToken, new NameSegment(Token.NoToken, calleeName, null), args);
+          Expression pcAssertion = new BinaryExpr(Token.NoToken, BinaryExpr.Opcode.Eq,
+            new ExprDotName(Token.NoToken, ReferToState("t'"), "pc", null),
+            new NameSegment(Token.NoToken, ActionRewriter.PCName(am.Name, i + 1), null));
+          Expression conj = new BinaryExpr(Token.NoToken, BinaryExpr.Opcode.And, actionPredicateCall, pcAssertion);
+
+          foreach (LocalVariable lv in locals) {
+            if (!modifiedVars.Contains(lv.Name)) {
+              conj = new BinaryExpr(Token.NoToken, BinaryExpr.Opcode.And, conj,
+                new BinaryExpr(Token.NoToken, BinaryExpr.Opcode.Eq,
+                  new ExprDotName(Token.NoToken, new ExprDotName(Token.NoToken, ReferToState("t'"), "local", null), lv.Name, null),
+                  new ExprDotName(Token.NoToken, new ExprDotName(Token.NoToken, ReferToState("t"), "local", null), lv.Name, null)));
+            }
+          }
+
+          cases.Add(new MatchCaseExpr(Token.NoToken, ActionRewriter.PCName(am.Name, i), new List<CasePattern> (), conj));
+        } else {
+          Reporter.Error(MessageSource.Rewriter, s, "Malformed action method body. Must consist of variable declarations followed by straight-line calls to actions.");
+        }
+      }
+      // Add a never-enabled case for the final PC value
+      cases.Add(new MatchCaseExpr(Token.NoToken, ActionRewriter.PCName(am.Name, i), new List<CasePattern>(), new LiteralExpr(Token.NoToken, false)));
+
+      // (forall tid' :: tid' in t.locals <==> tid' in t'.locals)
+      Expression predicateBody = new ForallExpr(Token.NoToken, new List<BoundVar>() { new BoundVar(Token.NoToken, "tid'", new InferredTypeProxy()) }, null,
+        new BinaryExpr(Token.NoToken, BinaryExpr.Opcode.Iff,
+          new BinaryExpr(Token.NoToken, BinaryExpr.Opcode.In, new NameSegment(Token.NoToken, "tid'", null),
+            new ExprDotName(Token.NoToken, new NameSegment(Token.NoToken, "t", null), "locals", null)),
+          new BinaryExpr(Token.NoToken, BinaryExpr.Opcode.In, new NameSegment(Token.NoToken, "tid'", null),
+            new ExprDotName(Token.NoToken, new NameSegment(Token.NoToken, "t'", null), "locals", null))),
+        null);
+      
+      // (forall tid' :: tid' in t.locals && tid != tid ==> t'.locals[tid'] == t.locals[tid'])
+      var otherThreadsDontChange = new ForallExpr(Token.NoToken, new List<BoundVar>() { new BoundVar(Token.NoToken, "tid'", new InferredTypeProxy()) }, null,
+        new BinaryExpr(Token.NoToken, BinaryExpr.Opcode.Imp, 
+          new BinaryExpr(Token.NoToken, BinaryExpr.Opcode.And, 
+           new BinaryExpr(Token.NoToken, BinaryExpr.Opcode.In, new NameSegment(Token.NoToken, "tid'", null),
+            new ExprDotName(Token.NoToken, new NameSegment(Token.NoToken, "t", null), "locals", null)),
+           new BinaryExpr(Token.NoToken, BinaryExpr.Opcode.Neq,
+             new NameSegment(Token.NoToken, "tid", null),
+             new NameSegment(Token.NoToken, "tid'", null))),
+          new BinaryExpr(Token.NoToken, BinaryExpr.Opcode.Eq, 
+            new SeqSelectExpr(Token.NoToken, true,
+              new ExprDotName(Token.NoToken, new NameSegment(Token.NoToken, "t'", null), "locals", null),
+              new NameSegment(Token.NoToken, "tid'", null), null),
+            new SeqSelectExpr(Token.NoToken, true,
+              new ExprDotName(Token.NoToken, new NameSegment(Token.NoToken, "t", null), "locals", null),
+              new NameSegment(Token.NoToken, "tid'", null), null))),
+        null);
+
+      predicateBody = new BinaryExpr(Token.NoToken, BinaryExpr.Opcode.And, predicateBody, otherThreadsDontChange);
+
+      predicateBody = new BinaryExpr(Token.NoToken, BinaryExpr.Opcode.And, predicateBody,
+        new MatchExpr(Token.NoToken, new ExprDotName(Token.NoToken, ReferToState("t"), "pc", null), cases, true));
+
+      var formals = new List<Formal>();
+      formals.Add(new Formal(Token.NoToken, "tid", new UserDefinedType(Token.NoToken, "Tid", null), true, false));
+      formals.Add(new Formal(Token.NoToken, "t", ActionRewriter.ReferToTotalState(am.Name), true, false));
+      formals.Add(new Formal(Token.NoToken, "t'", ActionRewriter.ReferToTotalState(am.Name), true, false));
+      var req = new List<Expression>();
+      req.Add(new BinaryExpr(Token.NoToken, BinaryExpr.Opcode.In, new NameSegment(Token.NoToken, "tid", null),
+        new ExprDotName(Token.NoToken, new NameSegment(Token.NoToken, "t", null), "locals", null)));
+      
+      BuiltIns.CreateArrowTypeDecl(formals.Count);
+
+      return new Predicate(Token.NoToken, am.Name + "Next", false, false, true,
+                           new List<TypeParameter>(), formals, req, new List<FrameExpression>(),
+                           new List<Expression>(), new Specification<Expression>(new List<Expression>(), null),
+                           predicateBody, BodyOriginKind.OriginalOrInherited, null, null);
+    }
+  }
 }
-
-

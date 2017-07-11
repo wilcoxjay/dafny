@@ -272,6 +272,8 @@ bool IsFunctionDecl() {
       return true;
     case _inductive:
       return scanner.Peek().kind != _lemma;
+    case _action:
+      return scanner.Peek().kind != _method;
     case _twostate:
       var x = scanner.Peek();
       return x.kind == _function || x.kind == _predicate;
@@ -794,6 +796,7 @@ TOKENS
   notIn = "!in" CONTEXT (nonidchar).
   ellipsis = "...".
   reveal = "reveal".
+  action = "action".
 COMMENTS FROM "/*" TO "*/" NESTED
 COMMENTS FROM "//" TO lf
 IGNORE cr + lf + tab
@@ -867,7 +870,7 @@ TopDecl<. ModuleDefinition module, List<MemberDecl/*!*/> membersDefaultClass, bo
   | OtherTypeDecl<dmod, module, out td>        (. module.TopLevelDecls.Add(td); .)
   | IteratorDecl<dmod, module, out iter>       (. module.TopLevelDecls.Add(iter); .)
   | TraitDecl<dmod, module, out trait>         (. module.TopLevelDecls.Add(trait); .)
-  | ClassMemberDecl<dmod, membersDefaultClass, false, !DafnyOptions.O.AllowGlobals, 
+  | ClassMemberDecl<dmod, membersDefaultClass, false, !DafnyOptions.O.AllowGlobals && Path.GetExtension(scanner.FullFilename) != ".cdfy", 
                     !isTopLevel && DafnyOptions.O.IronDafny && isAbstract>
   ) .
 
@@ -1455,6 +1458,7 @@ MethodDecl<DeclModifierData dmod, bool allowConstructor, bool isWithinAbstractMo
      bool isConstructor = false;
      bool isIndLemma = false;
      bool isCoLemma = false;
+     bool isAction = false;
      IToken signatureEllipsis = null;
      IToken bodyStart = Token.NoToken;
      IToken bodyEnd = Token.NoToken;
@@ -1465,6 +1469,11 @@ MethodDecl<DeclModifierData dmod, bool allowConstructor, bool isWithinAbstractMo
   ( "method"                        (. isPlainOlMethod = true; caption = "Methods";
                                        allowed = AllowedDeclModifiers.Ghost | AllowedDeclModifiers.Static 
                                          | AllowedDeclModifiers.Extern; .)
+  | "action" "method"               (. if (!DafnyOptions.O.CivlizedDafny) {
+                                         SemErr(t, "Action methods are only allowed in Civlized mode. Pass /civlized on the command line.");
+                                       }
+                                       isAction = true; caption = "Action Methods";
+                                       allowed = AllowedDeclModifiers.None; .)
   | "lemma"                         (. isLemma = true; caption = "Lemmas";
                                        allowed = AllowedDeclModifiers.AlreadyGhost | AllowedDeclModifiers.Static 
                                          | AllowedDeclModifiers.Protected; .)
@@ -1522,6 +1531,9 @@ MethodDecl<DeclModifierData dmod, bool allowConstructor, bool isWithinAbstractMo
      if (!isWithinAbstractModule && DafnyOptions.O.DisallowSoundnessCheating && body == null && ens.Count > 0 && !Attributes.Contains(attrs, "axiom") && !Attributes.Contains(attrs, "imported") && !Attributes.Contains(attrs, "decl") && theVerifyThisFile) {
         SemErr(t, "a method with an ensures clause must have a body, unless given the :axiom attribute");
      }
+     if (body == null && isAction) {
+        SemErr(t, "an action predicate must have a body");
+     }
 
      IToken tok = id;
      if (isConstructor) {
@@ -1540,7 +1552,11 @@ MethodDecl<DeclModifierData dmod, bool allowConstructor, bool isWithinAbstractMo
        m = new TwoStateLemma(tok, id.val, dmod.IsStatic, typeArgs, ins, outs,
                              req, new Specification<FrameExpression>(mod, modAttrs),
                              ens, new Specification<Expression>(dec, decAttrs), body, attrs, signatureEllipsis);
-     } else {
+    } else if (isAction) {
+       m = new ActionMethod(tok, id.val, typeArgs, ins, outs,
+                            req, new Specification<FrameExpression>(mod, modAttrs),
+                            ens, new Specification<Expression>(dec, decAttrs), body, attrs, signatureEllipsis);
+    } else {
        m = new Method(tok, id.val, dmod.IsStatic, dmod.IsGhost, typeArgs, ins, outs,
                       req, new Specification<FrameExpression>(mod, modAttrs), ens, new Specification<Expression>(dec, decAttrs), body, attrs, signatureEllipsis);
      }
@@ -1774,12 +1790,14 @@ FunctionDecl<DeclModifierData dmod, bool isWithinAbstractModule, out Function/*!
      IToken/*!*/ id = Token.NoToken;  // to please compiler
      List<TypeParameter/*!*/> typeArgs = new List<TypeParameter/*!*/>();
      List<Formal/*!*/> formals = new List<Formal/*!*/>();
+     List<Formal/*!*/> outs = new List<Formal/*!*/>();
      Formal/*!*/ result = null;
      Type/*!*/ returnType = new BoolType();
      List<Expression/*!*/> reqs = new List<Expression/*!*/>();
      List<Expression/*!*/> ens = new List<Expression/*!*/>();
      List<FrameExpression/*!*/> reads = new List<FrameExpression/*!*/>();
      List<Expression/*!*/> decreases;
+     List<FrameExpression/*!*/> mod;
      Expression body = null;
      bool isPredicate = false; bool isIndPredicate = false; bool isCoPredicate = false;
      bool isFunctionMethod = false;
@@ -1788,6 +1806,7 @@ FunctionDecl<DeclModifierData dmod, bool isWithinAbstractModule, out Function/*!
      IToken signatureEllipsis = null;
      bool missingOpenParen;
      bool isTwoState = false;
+     bool isAction = false;
   .)
   /* ----- function ----- */
   [ "twostate"               (. isTwoState = true; .)
@@ -1890,15 +1909,38 @@ FunctionDecl<DeclModifierData dmod, bool isWithinAbstractModule, out Function/*!
       ]
     | "..."                    (. signatureEllipsis = t; .)
     )
+
+  /* ----- action ----- */  
+  | (. Contract.Assert(!isTwoState);  // the IsFunctionDecl check checks that "twostate" is not followed by "action"
+    .)
+    "action" "predicate"       (. if (!DafnyOptions.O.CivlizedDafny) {
+                                    SemErr(t, "Action predicates are only allowed in Civlized mode. Pass /civlized on the command line.");
+                                  }
+                                  isAction = true; .)
+    (. CheckDeclModifiers(dmod, "Actions", AllowedDeclModifiers.None); .)
+    { Attribute<ref attrs> }
+    NoUSIdent<out id>
+    (
+      [ GenericParameters<typeArgs> ]
+      Formals<true, false, false, formals>
+      [ ":"                    (. SemErr(t, "actions do not have an explicitly declared return type"); .)]
+      [ "returns" Formals<false, false, false, outs> ]
+    | "..."                    (. signatureEllipsis = t; .)
+    )
+
   )
 
   (. decreases = isIndPredicate || isCoPredicate ? null : new List<Expression/*!*/>(); .)
-  { FunctionSpec<reqs, reads, ens, decreases> }
+  (. mod = isAction ? new List<FrameExpression/*!*/>() : null; .)
+  { FunctionSpec<reqs, reads, ens, decreases, mod> }
   [ FunctionBody<out body, out bodyStart, out bodyEnd>
   ]
   (. if (!isWithinAbstractModule && DafnyOptions.O.DisallowSoundnessCheating && body == null && ens.Count > 0 &&
          !Attributes.Contains(attrs, "axiom") && !Attributes.Contains(attrs, "imported")) {
         SemErr(t, "a function with an ensures clause must have a body, unless given the :axiom attribute");
+     }
+     if (body == null && isAction) {
+        SemErr(t, "an action predicate must have a body");
      }
      EncodeExternAsAttribute(dmod, ref attrs, id);
      IToken tok = id;
@@ -1917,6 +1959,9 @@ FunctionDecl<DeclModifierData dmod, bool isWithinAbstractModule, out Function/*!
      } else if (isCoPredicate) {
         f = new CoPredicate(tok, id.val, dmod.IsStatic, dmod.IsProtected, typeArgs, formals,
                             reqs, reads, ens, body, attrs, signatureEllipsis);
+     } else if (isAction) {
+        f = new ActionPredicate(tok, id.val, typeArgs, formals, outs, 
+                                reqs, reads, new Specification<FrameExpression>(mod, null), ens, new Specification<Expression>(decreases, null), body, attrs, signatureEllipsis);
      } else {
         f = new Function(tok, id.val, dmod.IsStatic, dmod.IsProtected, !isFunctionMethod, typeArgs, formals, result, returnType,
                          reqs, reads, ens, new Specification<Expression>(decreases, null), body, attrs, signatureEllipsis);
@@ -1930,13 +1975,22 @@ FunctionDecl<DeclModifierData dmod, bool isWithinAbstractModule, out Function/*!
      }
   .)
   .
-FunctionSpec<.List<Expression/*!*/>/*!*/ reqs, List<FrameExpression/*!*/>/*!*/ reads, List<Expression/*!*/>/*!*/ ens, List<Expression/*!*/> decreases.>
+FunctionSpec<.List<Expression/*!*/>/*!*/ reqs, List<FrameExpression/*!*/>/*!*/ reads, List<Expression/*!*/>/*!*/ ens, List<Expression/*!*/> decreases, List<FrameExpression/*!*/> mod.>
 = (. Contract.Requires(cce.NonNullElements(reqs));
      Contract.Requires(cce.NonNullElements(reads));
      Contract.Requires(decreases == null || cce.NonNullElements(decreases));
      Expression/*!*/ e;  FrameExpression/*!*/ fe; .)
   SYNC
-  ( "requires" Expression<out e, false, false> OldSemi  (. reqs.Add(e); .)
+  ( "modifies"                                      (. if (mod == null) {
+                                                         SemErr(t, "'modifies' clauses are meaningless on all functions except actions, so they are not allowed");
+                                                         mod = new List<FrameExpression/*!*/>();
+                                                       }
+                                                    .)
+      FrameExpression<out fe, false, false>         (. mod.Add(fe); .)
+      { "," FrameExpression<out fe, false, false>   (. mod.Add(fe); .)
+      }
+      OldSemi
+  | "requires" Expression<out e, false, false> OldSemi  (. reqs.Add(e); .)
   | "reads"
     PossiblyWildFrameExpression<out fe, false>          (. reads.Add(fe); .)
     { "," PossiblyWildFrameExpression<out fe, false>    (. reads.Add(fe); .)

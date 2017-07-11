@@ -36,7 +36,7 @@ namespace Microsoft.Dafny {
       var extension = Path.GetExtension(filePath);
       if (extension != null) { extension = extension.ToLower(); }
 
-      if (extension == ".dfy" || extension == ".dfyi") {
+      if (extension == ".dfy" || extension == ".dfyi" || extension == ".cdfy") {
         isPrecompiled = false;
         SourceFileName = filePath;
       } else if (extension == ".dll") {

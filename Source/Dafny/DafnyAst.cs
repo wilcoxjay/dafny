@@ -4949,6 +4949,21 @@ namespace Microsoft.Dafny {
     }
   }
 
+  public class ActionPredicate : Predicate
+  {
+    public readonly Specification<FrameExpression> Mod;
+    public readonly List<Formal> Outs;
+    public ActionPredicate(IToken tok, string name,
+                  List<TypeParameter> typeArgs, List<Formal> formals, List<Formal> outs,
+                  List<Expression> req, List<FrameExpression> reads, Specification<FrameExpression> mod, List<Expression> ens, Specification<Expression> decreases,
+                  Expression body, Attributes attributes, IToken signatureEllipsis, Declaration clonedFrom = null) 
+    : base(tok, name, false, false, false, typeArgs, formals, req, reads, ens, decreases, body, BodyOriginKind.OriginalOrInherited, attributes, signatureEllipsis, clonedFrom)
+    {
+      this.Mod = mod;
+      this.Outs = outs;
+    }
+  }
+
   /// <summary>
   /// An PrefixPredicate is the inductive unrolling P# implicitly declared for every fixpoint-predicate P.
   /// </summary>
@@ -5420,6 +5435,21 @@ namespace Microsoft.Dafny {
     }
   }
 
+  public class ActionMethod : Method
+  {
+    public ActionMethod(IToken tok, string name,
+                 [Captured] List<TypeParameter> typeArgs,
+                 [Captured] List<Formal> ins, [Captured] List<Formal> outs,
+                 [Captured] List<MaybeFreeExpression> req, [Captured] Specification<FrameExpression> mod,
+                 [Captured] List<MaybeFreeExpression> ens,
+                 [Captured] Specification<Expression> decreases,
+                 [Captured] BlockStmt body,
+                 Attributes attributes, IToken signatureEllipsis, Declaration clonedFrom = null)
+      : base(tok, name, false, false, typeArgs, ins, outs, req, mod, ens, decreases, body, attributes, signatureEllipsis, clonedFrom)
+    {
+
+    }
+  }
   // ------------------------------------------------------------------------------------------------------
 
   public abstract class Statement : IAttributeBearingDeclaration

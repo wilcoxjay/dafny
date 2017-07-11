@@ -333,6 +333,9 @@ namespace Microsoft.Dafny
       rewriters = new List<IRewriter>();
       refinementTransformer = new RefinementTransformer(prog);
       rewriters.Add(refinementTransformer);
+      if (DafnyOptions.O.CivlizedDafny) {
+        rewriters.Add(new ActionRewriter(prog.BuiltIns, reporter));
+      }
       rewriters.Add(new AutoContractsRewriter(reporter));
       rewriters.Add(new OpaqueFunctionRewriter(this.reporter));
       rewriters.Add(new AutoReqFunctionRewriter(this.reporter));
