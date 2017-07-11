@@ -728,6 +728,7 @@ Everything) {
       if (f.Body != null && !printSignatureOnly) {
         Indent(indent);
         wr.WriteLine("{");
+        Indent(ind);
         PrintExtendedExpr(f.Body, ind, true, false);
         Indent(indent);
         wr.WriteLine("}");
@@ -1504,18 +1505,18 @@ Everything) {
     public void PrintExtendedExpr(Expression expr, int indent, bool isRightmost, bool endWithCloseParen) {
       Contract.Requires(expr != null);
       if (expr is ITEExpr) {
-        Indent(indent);
         while (true) {
           var ite = (ITEExpr)expr;
           wr.Write("if ");
           PrintExpression(ite.Test, false);
           wr.WriteLine(" then");
+          Indent(indent + IndentAmount);
           PrintExtendedExpr(ite.Thn, indent + IndentAmount, true, false);
           expr = ite.Els;
           if (expr is ITEExpr) {
-            Indent(indent);  wr.Write("else ");
+            Indent(indent); wr.Write("else ");
           } else {
-            Indent(indent);  wr.WriteLine("else");
+            Indent(indent); wr.WriteLine("else");
             Indent(indent + IndentAmount);
             PrintExpression(expr, isRightmost, false);
             wr.WriteLine(endWithCloseParen ? ")" : "");
@@ -1527,7 +1528,6 @@ Everything) {
         if (DafnyOptions.O.DafnyPrintResolvedFile == null && e.OrigUnresolved != null) {
           PrintExtendedExpr(e.OrigUnresolved, indent, isRightmost, endWithCloseParen);
         } else {
-          Indent(indent);
           var parensNeeded = !isRightmost && !e.UsesOptionalBraces;
           if (parensNeeded) { wr.Write("("); }
           wr.Write("match ");
@@ -1541,6 +1541,7 @@ Everything) {
             wr.Write("case {0}", mc.Id);
             PrintMatchCaseArgument(mc);
             wr.WriteLine(" =>");
+            Indent(ind + IndentAmount);
             PrintExtendedExpr(mc.Body, ind + IndentAmount, isLastCase, isLastCase && (parensNeeded || endWithCloseParen));
             i++;
           }
@@ -1551,7 +1552,6 @@ Everything) {
         }
       } else if (expr is LetExpr) {
         var e = (LetExpr)expr;
-        Indent(indent);
         wr.Write("var ");
         string sep = "";
         foreach (var lhs in e.LHSs) {
@@ -1566,19 +1566,29 @@ Everything) {
         }
         PrintExpressionList(e.RHSs, true);
         wr.WriteLine(";");
+        Indent(indent);
         PrintExtendedExpr(e.Body, indent, isRightmost, endWithCloseParen);
       } else if (expr is StmtExpr && isRightmost) {
         var e = (StmtExpr)expr;
-        Indent(indent);
         PrintStatement(e.S, indent);
         wr.WriteLine();
+        Indent(indent);
         PrintExtendedExpr(e.E, indent, isRightmost, endWithCloseParen);
-
       } else if (expr is ParensExpression) {
         PrintExtendedExpr(((ParensExpression)expr).E, indent, isRightmost, endWithCloseParen);
-      } else {
+      } else if (expr is BinaryExpr && (expr as BinaryExpr).Op == BinaryExpr.Opcode.And) {
+        var e = (BinaryExpr)expr;
+        if (e.E0 is BinaryExpr && (e.E0 as BinaryExpr).Op == BinaryExpr.Opcode.And) {
+          PrintExtendedExpr(e.E0, indent, false, false);
+        } else {
+          wr.Write("&& ");
+          PrintExtendedExpr(e.E0, indent + IndentAmount, false, false);
+        }
         Indent(indent);
-        PrintExpression(expr, false, indent);
+        wr.Write("&& ");
+        PrintExtendedExpr(e.E1, indent + IndentAmount, isRightmost, endWithCloseParen);
+      } else {
+        PrintExpression(expr, isRightmost, false, indent);
         wr.WriteLine(endWithCloseParen ? ")" : "");
       }
     }
@@ -1627,6 +1637,11 @@ Everything) {
     public void PrintExpression(Expression expr, bool isFollowedBySemicolon, int indent) {
       Contract.Requires(expr != null);
       PrintExpr(expr, 0, false, true, isFollowedBySemicolon, indent);
+    }
+
+    public void PrintExpression(Expression expr, bool isRightmost, bool isFollowedBySemicolon, int indent) {
+      Contract.Requires(expr != null);
+      PrintExpr(expr, 0, false, isRightmost, isFollowedBySemicolon, indent);
     }
 
     public void PrintExpression(Expression expr, bool isFollowedBySemicolon, string keyword) {
