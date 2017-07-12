@@ -63,5 +63,9 @@ namespace Microsoft.Dafny {
     public void DotGraph() {
       new DafnyHelper(args, filename, ProgramSource).DotGraph();
     }
+
+    internal void FindDefinition(string file, string line, string col) {
+      new DafnyHelper(args, filename, ProgramSource).FindDefinition(file, line, col);
+    }
   }
 }

@@ -59,6 +59,18 @@ namespace Microsoft.Dafny {
       return success;
     }
 
+    internal void FindDefinition(string file, string line, string col) {
+      ServerUtils.ApplyArgs(args, reporter);
+      if (Parse() && Resolve()) {
+        int lineNum = Int32.Parse(line);
+        int colNum = Int32.Parse(col);
+        Console.WriteLine("{0}:{1}:{2}", file, lineNum, col);
+        Console.WriteLine("DEFINITIONS_START true DEFINITIONS_END");
+      } else {
+        Console.WriteLine("DEFINITIONS_START null DEFINITIONS_END");
+      }
+    }
+
     private bool Resolve() {
       var resolver = new Dafny.Resolver(dafnyProgram);
       resolver.ResolveProgram(dafnyProgram);

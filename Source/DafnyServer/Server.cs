@@ -87,6 +87,10 @@ namespace Microsoft.Dafny {
           ServerUtils.checkArgs(command, 0);
           ReadPayload();
           VersionCheck.CurrentVersion();
+        } else if (verb == "find-definition") {
+          ServerUtils.checkArgs(command, 3);
+          var payload = ReadPayload();
+          VerificationTask.ReadTask(payload).FindDefinition(command[1], command[2], command[3]);
         } else if (verb == "quit") {
           ServerUtils.checkArgs(command, 0);
           Exit();
