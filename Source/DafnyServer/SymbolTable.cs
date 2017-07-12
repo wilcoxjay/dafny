@@ -22,14 +22,71 @@ namespace DafnyServer {
         AddMethods(module, _information);
         AddFields(module, _information);
         AddClasses(module, _information);
+        AddTypes(module, _information);
+        AddModules(module, _information);
       }
       return _information;
+    }
+
+    private void AddModules(ModuleDefinition module, List<SymbolInformation> information) {
+      var moduleSymbol = new SymbolInformation {
+        Name = module.Name,
+        SymbolType = SymbolInformation.Type.Module,
+        StartToken = module.tok
+      };
+      information.Add(moduleSymbol);
+    }
+
+    private void AddTypes(ModuleDefinition module, List<SymbolInformation> information) {
+      foreach (var decl in module.TopLevelDecls) {
+        if (decl is DatatypeDecl) {
+          var datatype = (DatatypeDecl)decl;
+          var datatypeSymbol = new SymbolInformation {
+            Name = datatype.Name,
+            SymbolType = SymbolInformation.Type.Datatype,
+            StartToken = datatype.tok,
+          };
+          information.Add(datatypeSymbol);
+          foreach (var ctor in datatype.Ctors) {
+            if (!ctor.Name.Equals(datatype.Name)) {
+              var ctorSymbol = new SymbolInformation {
+                Name = ctor.Name,
+                SymbolType = SymbolInformation.Type.Constructor,
+                StartToken = ctor.tok
+              };
+              information.Add(ctorSymbol);
+            }
+            var querySymbol = new SymbolInformation {
+              Name = ctor.QueryField.Name,
+              SymbolType = SymbolInformation.Type.QueryField,
+              StartToken = ctor.QueryField.tok
+            };
+            information.Add(querySymbol);
+            foreach (var dtor in ctor.Destructors) {
+              var dtorSymbol = new SymbolInformation {
+                Name = dtor.Name,
+                SymbolType = SymbolInformation.Type.Destructor,
+                StartToken = dtor.tok
+              };
+              information.Add(dtorSymbol);
+            }
+          }
+        } else if (decl is TypeSynonymDeclBase) {
+          var type = (TypeSynonymDeclBase)decl;
+          var typeSymbol = new SymbolInformation {
+            Name = type.Name,
+            SymbolType = SymbolInformation.Type.TypeSynonym,
+            StartToken = type.tok,
+          };
+          information.Add(typeSymbol);
+        }
+      }
     }
 
     private void AddMethods(ModuleDefinition module, List<SymbolInformation> information) {
       foreach (
           var clbl in
-          ModuleDefinition.AllCallables(module.TopLevelDecls).Where(e => e != null && !(e.Tok is IncludeToken))) {
+          ModuleDefinition.AllCallables(module.TopLevelDecls).Where(e => e != null)) {
 
         if (clbl is Predicate) {
           var predicate = clbl as Predicate;
@@ -86,7 +143,7 @@ namespace DafnyServer {
 
     private void AddFields(ModuleDefinition module, List<SymbolInformation> information) {
       foreach (
-          var fs in ModuleDefinition.AllFields(module.TopLevelDecls).Where(e => e != null && !(e.tok is IncludeToken))) {
+          var fs in ModuleDefinition.AllFields(module.TopLevelDecls).Where(e => e != null)) {
 
         var fieldSymbol = new SymbolInformation {
           Module = fs.EnclosingClass.Module.Name,
@@ -107,7 +164,7 @@ namespace DafnyServer {
 
     private static void AddClasses(ModuleDefinition module, List<SymbolInformation> information) {
       foreach (
-          var cs in ModuleDefinition.AllClasses(module.TopLevelDecls).Where(e => e != null && !(e.tok is IncludeToken))) {
+          var cs in ModuleDefinition.AllClasses(module.TopLevelDecls).Where(e => e != null)) {
         if (cs.Module != null && cs.tok != null) {
           var classSymbol = new SymbolInformation {
             Module = cs.Module.Name,
@@ -380,6 +437,8 @@ namespace DafnyServer {
       public int? Line { get; set; }
       [DataMember(Name = "Column")]
       public int? Column { get; set; }
+      [DataMember(Name = "File")]
+      public string File { get; set; }
       [DataMember(Name = "EndPosition")]
       public int? EndPosition { get; set; }
       [DataMember(Name = "EndLine")]
@@ -409,6 +468,7 @@ namespace DafnyServer {
           Line = value.line;
           Position = value.pos;
           Column = value.col;
+          File = value.filename;
         }
       }
 
@@ -427,7 +487,13 @@ namespace DafnyServer {
         Field,
         Call,
         Definition,
-        Predicate
+        Predicate,
+        Datatype,
+        Constructor,
+        QueryField,
+        Destructor,
+        TypeSynonym,
+        Module
       }
 
       public SymbolInformation() {
