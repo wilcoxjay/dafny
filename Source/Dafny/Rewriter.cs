@@ -2086,6 +2086,7 @@ namespace Microsoft.Dafny
     protected ErrorReporter Reporter;
     protected IndDatatypeDecl SharedState;
     protected Type SharedStateType;
+    protected Type TidType;
     protected ISet<string> SharedNames;
     protected BuiltIns BuiltIns;
 
@@ -2094,6 +2095,7 @@ namespace Microsoft.Dafny
       Reporter = reporter;
       SharedState = sharedState;
       SharedStateType = new UserDefinedType(Token.NoToken, SharedState.Name, null);
+      TidType = new UserDefinedType(Token.NoToken, "Tid", null);
       SharedNames = sharedNames;
       BuiltIns = builtins;
     }
@@ -2128,6 +2130,7 @@ namespace Microsoft.Dafny
 
     public Function CloneActionPredicate(ActionPredicate ap) {
       var formals = new List<Formal>();
+      formals.Add(new Formal(Token.NoToken, "tid", TidType, true, false));
       formals.Add(new Formal(Token.NoToken, "s", SharedStateType, true, false));
       formals.Add(new Formal(Token.NoToken, "s'", SharedStateType, true, false));
       formals.AddRange(ap.Formals.ConvertAll(CloneFormal));
@@ -2163,6 +2166,7 @@ namespace Microsoft.Dafny
     protected ErrorReporter Reporter;
     protected IndDatatypeDecl SharedState;
     protected Type SharedStateType;
+    protected Type TidType;
     protected ISet<string> SharedNames;
     protected ISet<string> ActionPredicates;
     protected ModuleDefinition ParentModule;
@@ -2174,6 +2178,7 @@ namespace Microsoft.Dafny
       Reporter = reporter;
       SharedState = sharedState;
       SharedStateType = new UserDefinedType(Token.NoToken, SharedState.Name, null);
+      TidType = new UserDefinedType(Token.NoToken, "Tid", null);
       SharedNames = sharedNames;
       ActionPredicates = actionPredicates;
       ParentModule = m;
@@ -2236,7 +2241,7 @@ namespace Microsoft.Dafny
           var callExpr = (u.Rhss[0] as ExprRhs).Expr as ApplySuffix;
           var calleeName = (callExpr.Lhs as NameSegment).Name;
           var args = new List<Expression>();
-          // TODO: pass tid as well (and modify action predicates to expect it)
+          args.Add(new NameSegment(Token.NoToken, "tid", null));
           args.Add(new ExprDotName(Token.NoToken, new NameSegment(Token.NoToken, "t", null), "shared", null));
           args.Add(new ExprDotName(Token.NoToken, new NameSegment(Token.NoToken, "t'", null), "shared", null));
           var preBodyCloner = new BodyCloner("t");
@@ -2310,7 +2315,7 @@ namespace Microsoft.Dafny
         new MatchExpr(Token.NoToken, new ExprDotName(Token.NoToken, ReferToState("t"), "pc", null), cases, true));
 
       var formals = new List<Formal>();
-      formals.Add(new Formal(Token.NoToken, "tid", new UserDefinedType(Token.NoToken, "Tid", null), true, false));
+      formals.Add(new Formal(Token.NoToken, "tid", TidType, true, false));
       formals.Add(new Formal(Token.NoToken, "t", ActionRewriter.ReferToTotalState(am.Name), true, false));
       formals.Add(new Formal(Token.NoToken, "t'", ActionRewriter.ReferToTotalState(am.Name), true, false));
       var req = new List<Expression>();
