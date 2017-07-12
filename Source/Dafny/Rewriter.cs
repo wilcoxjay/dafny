@@ -2018,6 +2018,9 @@ namespace Microsoft.Dafny
     }
     
     internal override void PreResolve(ModuleDefinition m) {
+      if (!m.IsAction) {
+        return;
+      }
       var newDecls = new List<TopLevelDecl>();
       newDecls.Add(DeclareTid(m));
       newDecls.Add(DeclareLocalState(m));

@@ -3024,6 +3024,7 @@ namespace Microsoft.Dafny {
     public readonly bool IsFacade; // True iff this module represents a module facade (that is, an abstract interface)
     private readonly bool IsBuiltinName; // true if this is something like _System that shouldn't have it's name mangled.
     public bool IsToBeVerified = true;
+    public bool IsAction;
 
 
     private ModuleDefinition exclusiveRefinement;
@@ -3089,7 +3090,7 @@ namespace Microsoft.Dafny {
       Contract.Invariant(CallGraph != null);
     }
 
-    public ModuleDefinition(IToken tok, string name, bool isAbstract, bool isProtected, bool isFacade, bool isExclusiveRefinement, IToken refinementBase, ModuleDefinition parent, Attributes attributes, bool isBuiltinName, Parser parser = null)
+    public ModuleDefinition(IToken tok, string name, bool isAbstract, bool isProtected, bool isFacade, bool isExclusiveRefinement, IToken refinementBase, ModuleDefinition parent, Attributes attributes, bool isBuiltinName, bool isAction = false, Parser parser = null)
     {
       Contract.Requires(tok != null);
       Contract.Requires(name != null);
@@ -3106,7 +3107,7 @@ namespace Microsoft.Dafny {
       this.refinementBase = null;
       Includes = new List<Include>();
       IsBuiltinName = isBuiltinName;
-
+      IsAction = isAction;
       
     }
     VisibilityScope visibilityScope;

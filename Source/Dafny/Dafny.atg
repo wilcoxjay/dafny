@@ -265,6 +265,7 @@ bool IsWitness() {
 }
 
 bool IsFunctionDecl() {
+  scanner.ResetPeek();
   switch (la.kind) {
     case _function:
     case _predicate:
@@ -277,6 +278,20 @@ bool IsFunctionDecl() {
     case _twostate:
       var x = scanner.Peek();
       return x.kind == _function || x.kind == _predicate;
+    default:
+      return false;
+  }
+}
+
+bool IsSubModuleDecl() {
+  scanner.ResetPeek();
+  switch (la.kind) {
+    case _module:
+    case _import:
+    case _export:
+      return true;
+    case _action:
+      return scanner.Peek().kind == _module;
     default:
       return false;
   }
@@ -797,6 +812,7 @@ TOKENS
   ellipsis = "...".
   reveal = "reveal".
   action = "action".
+  module = "module".
 COMMENTS FROM "/*" TO "*/" NESTED
 COMMENTS FROM "//" TO lf
 IGNORE cr + lf + tab
@@ -863,7 +879,8 @@ TopDecl<. ModuleDefinition module, List<MemberDecl/*!*/> membersDefaultClass, bo
      TraitDecl/*!*/ trait;
   .)
   { DeclModifier<ref dmod> }
-  ( SubModuleDecl<dmod, module, out submodule> (. module.TopLevelDecls.Add(submodule); .)
+  ( IF(IsSubModuleDecl())
+    SubModuleDecl<dmod, module, out submodule> (. module.TopLevelDecls.Add(submodule); .)
   | ClassDecl<dmod, module, out c>             (. module.TopLevelDecls.Add(c); .)
   | DatatypeDecl<dmod, module, out dt>         (. module.TopLevelDecls.Add(dt); .)
   | NewtypeDecl<dmod, module, out td>          (. module.TopLevelDecls.Add(td); .)
@@ -885,15 +902,17 @@ SubModuleDecl<DeclModifierData dmod, ModuleDefinition parent, out ModuleDecl sub
      bool isExclusively = false;
      bool isProtected = dmod.IsProtected;
      bool opened = false;
+     bool isAction = false;
      CheckDeclModifiers(dmod, "Modules", AllowedDeclModifiers.Abstract | AllowedDeclModifiers.Extern | AllowedDeclModifiers.Protected);
   .)
-  ( "module"
+    ([ "action" (. isAction = true; .) ]
+    "module"
     { Attribute<ref attrs> }
     NoUSIdent<out id>
     (. EncodeExternAsAttribute(dmod, ref attrs, id); .)
   
       [ "refines" ModuleName<out idRefined> (. isExclusively = false; .) ] 
-            (. module = new ModuleDefinition(id, id.val, isAbstract, isProtected, false, isExclusively, idRefined, parent, attrs, false); module.IsToBeVerified = theVerifyThisFile; .)  
+            (. module = new ModuleDefinition(id, id.val, isAbstract, isProtected, false, isExclusively, idRefined, parent, attrs, false, isAction); module.IsToBeVerified = theVerifyThisFile; .)  
        "{"                                             (. module.BodyStartTok = t; .)
             { TopDecl<module, namedModuleDefaultClassMembers, /* isTopLevel */ false, isAbstract>}
        "}"                                 (. module.BodyEndTok = t;

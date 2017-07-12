@@ -572,10 +572,10 @@ public class Scanner {
 			case "witness": t.kind = 70; break;
 			case "reveal": t.kind = 85; break;
 			case "action": t.kind = 86; break;
-			case "include": t.kind = 87; break;
-			case "abstract": t.kind = 88; break;
-			case "extern": t.kind = 89; break;
-			case "module": t.kind = 90; break;
+			case "module": t.kind = 87; break;
+			case "include": t.kind = 88; break;
+			case "abstract": t.kind = 89; break;
+			case "extern": t.kind = 90; break;
 			case "refines": t.kind = 91; break;
 			case "opened": t.kind = 92; break;
 			case "provides": t.kind = 94; break;
