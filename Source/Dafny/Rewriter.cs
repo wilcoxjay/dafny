@@ -1925,12 +1925,16 @@ namespace Microsoft.Dafny
   public class ActionRewriter : IRewriter
   {
 
-    public BuiltIns BuiltIns;
+    public Program Program;
     
-    public ActionRewriter(BuiltIns builtins, ErrorReporter reporter)
-      : base(reporter) {
-      Contract.Requires(reporter != null);
-      BuiltIns = builtins;
+    public ActionRewriter(Program program)
+      : base(program.reporter) {
+      Contract.Requires(program.reporter != null);
+      Program = program;
+    }
+
+    public static Expression ParseExpression(string s, Program p) {
+      return Parser.ParseExpression(s, "<none>", "<none>", null, p.DefaultModule, p.BuiltIns, new Errors(p.reporter));
     }
 
     protected static Type ReferToType(string name, List<Type> optTypeArgs = null) {
@@ -2043,7 +2047,7 @@ namespace Microsoft.Dafny
 
             var sharedState = DeclareSharedState(m, sharedFields);
             newDecls.Add(sharedState);
-            var apCloner = new ActionPredicateCloner(BuiltIns, reporter, sharedState, sharedNames);
+            var apCloner = new ActionPredicateCloner(Program, sharedState, sharedNames);
 
             var newMembers = new List<MemberDecl>();
             var oldMembers = new List<MemberDecl>();
@@ -2060,7 +2064,7 @@ namespace Microsoft.Dafny
               }
             }
 
-            var amCloner = new ActionMethodCloner(BuiltIns, reporter, sharedState, sharedNames, actionPredicates, m, newDecls);
+            var amCloner = new ActionMethodCloner(Program, sharedState, sharedNames, actionPredicates, m, newDecls);
             foreach (MemberDecl member in c.Members) {
               if (member is ActionMethod) {
                 var am = (ActionMethod) member;
@@ -2083,21 +2087,19 @@ namespace Microsoft.Dafny
 
   class ActionPredicateCloner : Cloner {
 
-    protected ErrorReporter Reporter;
     protected IndDatatypeDecl SharedState;
     protected Type SharedStateType;
     protected Type TidType;
     protected ISet<string> SharedNames;
-    protected BuiltIns BuiltIns;
+    protected Program Program;
 
-    public ActionPredicateCloner(BuiltIns builtins, ErrorReporter reporter, IndDatatypeDecl sharedState, ISet<string> sharedNames)
+    public ActionPredicateCloner(Program program, IndDatatypeDecl sharedState, ISet<string> sharedNames)
       : base() {
-      Reporter = reporter;
       SharedState = sharedState;
       SharedStateType = new UserDefinedType(Token.NoToken, SharedState.Name, null);
       TidType = new UserDefinedType(Token.NoToken, "Tid", null);
       SharedNames = sharedNames;
-      BuiltIns = builtins;
+      Program = program;
     }
 
     public Expression ReferencePreState(IToken tok, string name) {
@@ -2117,7 +2119,7 @@ namespace Microsoft.Dafny
             return ReferencePreState(E.tok, ns.Name);
           }
         }
-        Reporter.Error(MessageSource.Rewriter, expr.tok, "old() can only be applied to shared variables inside an action.");
+        Program.reporter.Error(MessageSource.Rewriter, expr.tok, "old() can only be applied to shared variables inside an action.");
       } else if (expr is NameSegment) {
         var ns = (NameSegment)expr;
         if (SharedNames.Contains(ns.Name)) {
@@ -2142,7 +2144,7 @@ namespace Microsoft.Dafny
           var ns = (NameSegment) fe.E;
           mod.Add(ns.Name);
         } else {
-          Reporter.Error(MessageSource.Rewriter, fe.tok, "modifies clause of action can only refer to shared variables");
+          Program.reporter.Error(MessageSource.Rewriter, fe.tok, "modifies clause of action can only refer to shared variables");
         }
       }
 
@@ -2153,7 +2155,7 @@ namespace Microsoft.Dafny
         }
       }
 
-      BuiltIns.CreateArrowTypeDecl(formals.Count);
+      Program.BuiltIns.CreateArrowTypeDecl(formals.Count);
 
       return new Predicate(ap.tok, ap.Name, false, false, true, ap.TypeArgs, formals,
                            ap.Req, ap.Reads, ap.Ens, ap.Decreases, body, 
@@ -2163,7 +2165,6 @@ namespace Microsoft.Dafny
   }
 
   class ActionMethodCloner : Cloner {
-    protected ErrorReporter Reporter;
     protected IndDatatypeDecl SharedState;
     protected Type SharedStateType;
     protected Type TidType;
@@ -2171,11 +2172,10 @@ namespace Microsoft.Dafny
     protected ISet<string> ActionPredicates;
     protected ModuleDefinition ParentModule;
     protected List<TopLevelDecl> NewDecls;
-    protected BuiltIns BuiltIns;
+    protected Program Program;
 
-    public ActionMethodCloner(BuiltIns builtins, ErrorReporter reporter, IndDatatypeDecl sharedState, ISet<string> sharedNames, ISet<string> actionPredicates, ModuleDefinition m, List<TopLevelDecl> newDecls)
+    public ActionMethodCloner(Program program, IndDatatypeDecl sharedState, ISet<string> sharedNames, ISet<string> actionPredicates, ModuleDefinition m, List<TopLevelDecl> newDecls)
           : base() {
-      Reporter = reporter;
       SharedState = sharedState;
       SharedStateType = new UserDefinedType(Token.NoToken, SharedState.Name, null);
       TidType = new UserDefinedType(Token.NoToken, "Tid", null);
@@ -2183,7 +2183,7 @@ namespace Microsoft.Dafny
       ActionPredicates = actionPredicates;
       ParentModule = m;
       NewDecls = newDecls;
-      BuiltIns = builtins;
+      Program = program;
     }
 
 
@@ -2209,6 +2209,10 @@ namespace Microsoft.Dafny
       }
     }
 
+    public Expression ParseExpression(string s) {
+      return ActionRewriter.ParseExpression(s, Program);
+    }
+
     public Function CloneActionMethod(ActionMethod am) {
       var body = am.Body;
       var locals = new List<LocalVariable>();
@@ -2217,7 +2221,7 @@ namespace Microsoft.Dafny
         var d = (VarDeclStmt)body.Body[nvars];
         locals.AddRange(d.Locals);
         if (d.Update != null) {
-          Reporter.Warning(MessageSource.Rewriter, d.Tok, "Initialization of local state is not yet supported. Ignoring this initialization.");
+          Program.reporter.Warning(MessageSource.Rewriter, d.Tok, "Initialization of local state is not yet supported. Ignoring this initialization.");
         }
         
       }
@@ -2236,7 +2240,7 @@ namespace Microsoft.Dafny
           if (u.Rhss.Count != 1 || !(u.Rhss[0] is ExprRhs) 
               || !((u.Rhss[0] as ExprRhs).Expr is ApplySuffix)
               || !(((u.Rhss[0] as ExprRhs).Expr as ApplySuffix).Lhs is NameSegment)) {
-            Reporter.Warning(MessageSource.Rewriter, s.Tok, "Malformed action call. RHS of update contain exactly one call.");
+            Program.reporter.Warning(MessageSource.Rewriter, s.Tok, "Malformed action call. RHS of update contain exactly one call.");
           }
           var callExpr = (u.Rhss[0] as ExprRhs).Expr as ApplySuffix;
           var calleeName = (callExpr.Lhs as NameSegment).Name;
@@ -2252,7 +2256,7 @@ namespace Microsoft.Dafny
           var modifiedVars = new HashSet<string>();
           foreach (var outVar in u.Lhss) {
             if (!(outVar is NameSegment)) {
-              Reporter.Warning(MessageSource.Rewriter, outVar.tok, "Action methods can only assign to (local) variables.");
+              Program.reporter.Warning(MessageSource.Rewriter, outVar.tok, "Action methods can only assign to (local) variables.");
             } else {
               NameSegment ns = (NameSegment)outVar;
               modifiedVars.Add(ns.Name);
@@ -2260,69 +2264,41 @@ namespace Microsoft.Dafny
             args.Add(postBodyCloner.CloneExpr(outVar));
           }
           Expression actionPredicateCall = new ApplySuffix(Token.NoToken, new NameSegment(Token.NoToken, calleeName, null), args);
-          Expression pcAssertion = new BinaryExpr(Token.NoToken, BinaryExpr.Opcode.Eq,
-            new ExprDotName(Token.NoToken, ReferToState("t'"), "pc", null),
-            new NameSegment(Token.NoToken, ActionRewriter.PCName(am.Name, i + 1), null));
+          Expression pcAssertion = ParseExpression(String.Format("t'.locals[tid].pc == {0}", ActionRewriter.PCName(am.Name, i + 1)));
           Expression conj = new BinaryExpr(Token.NoToken, BinaryExpr.Opcode.And, actionPredicateCall, pcAssertion);
 
           foreach (LocalVariable lv in locals) {
             if (!modifiedVars.Contains(lv.Name)) {
               conj = new BinaryExpr(Token.NoToken, BinaryExpr.Opcode.And, conj,
-                new BinaryExpr(Token.NoToken, BinaryExpr.Opcode.Eq,
-                  new ExprDotName(Token.NoToken, new ExprDotName(Token.NoToken, ReferToState("t'"), "local", null), lv.Name, null),
-                  new ExprDotName(Token.NoToken, new ExprDotName(Token.NoToken, ReferToState("t"), "local", null), lv.Name, null)));
+                ParseExpression(String.Format("t'.locals[tid].local.{0} == t.locals[tid].local.{0}", lv.Name)));
             }
           }
 
           cases.Add(new MatchCaseExpr(Token.NoToken, ActionRewriter.PCName(am.Name, i), new List<CasePattern> (), conj));
         } else {
-          Reporter.Error(MessageSource.Rewriter, s, "Malformed action method body. Must consist of variable declarations followed by straight-line calls to actions.");
+          Program.reporter.Error(MessageSource.Rewriter, s, "Malformed action method body. Must consist of variable declarations followed by straight-line calls to actions.");
         }
       }
       // Add a never-enabled case for the final PC value
       cases.Add(new MatchCaseExpr(Token.NoToken, ActionRewriter.PCName(am.Name, i), new List<CasePattern>(), new LiteralExpr(Token.NoToken, false)));
 
-      // (forall tid' :: tid' in t.locals <==> tid' in t'.locals)
-      Expression predicateBody = new ForallExpr(Token.NoToken, new List<BoundVar>() { new BoundVar(Token.NoToken, "tid'", new InferredTypeProxy()) }, null,
-        new BinaryExpr(Token.NoToken, BinaryExpr.Opcode.Iff,
-          new BinaryExpr(Token.NoToken, BinaryExpr.Opcode.In, new NameSegment(Token.NoToken, "tid'", null),
-            new ExprDotName(Token.NoToken, new NameSegment(Token.NoToken, "t", null), "locals", null)),
-          new BinaryExpr(Token.NoToken, BinaryExpr.Opcode.In, new NameSegment(Token.NoToken, "tid'", null),
-            new ExprDotName(Token.NoToken, new NameSegment(Token.NoToken, "t'", null), "locals", null))),
-        null);
-      
-      // (forall tid' :: tid' in t.locals && tid != tid ==> t'.locals[tid'] == t.locals[tid'])
-      var otherThreadsDontChange = new ForallExpr(Token.NoToken, new List<BoundVar>() { new BoundVar(Token.NoToken, "tid'", new InferredTypeProxy()) }, null,
-        new BinaryExpr(Token.NoToken, BinaryExpr.Opcode.Imp, 
-          new BinaryExpr(Token.NoToken, BinaryExpr.Opcode.And, 
-           new BinaryExpr(Token.NoToken, BinaryExpr.Opcode.In, new NameSegment(Token.NoToken, "tid'", null),
-            new ExprDotName(Token.NoToken, new NameSegment(Token.NoToken, "t", null), "locals", null)),
-           new BinaryExpr(Token.NoToken, BinaryExpr.Opcode.Neq,
-             new NameSegment(Token.NoToken, "tid", null),
-             new NameSegment(Token.NoToken, "tid'", null))),
-          new BinaryExpr(Token.NoToken, BinaryExpr.Opcode.Eq, 
-            new SeqSelectExpr(Token.NoToken, true,
-              new ExprDotName(Token.NoToken, new NameSegment(Token.NoToken, "t'", null), "locals", null),
-              new NameSegment(Token.NoToken, "tid'", null), null),
-            new SeqSelectExpr(Token.NoToken, true,
-              new ExprDotName(Token.NoToken, new NameSegment(Token.NoToken, "t", null), "locals", null),
-              new NameSegment(Token.NoToken, "tid'", null), null))),
-        null);
+      Expression predicateBody = ParseExpression("forall tid' :: tid' in t.locals <==> tid' in t'.locals");
+
+      var otherThreadsDontChange = ParseExpression("forall tid' :: tid' in t.locals && tid != tid ==> t'.locals[tid'] == t.locals[tid']");
 
       predicateBody = new BinaryExpr(Token.NoToken, BinaryExpr.Opcode.And, predicateBody, otherThreadsDontChange);
 
       predicateBody = new BinaryExpr(Token.NoToken, BinaryExpr.Opcode.And, predicateBody,
-        new MatchExpr(Token.NoToken, new ExprDotName(Token.NoToken, ReferToState("t"), "pc", null), cases, true));
+        new MatchExpr(Token.NoToken, ParseExpression("t.locals[tid].pc"), cases, true));
 
       var formals = new List<Formal>();
       formals.Add(new Formal(Token.NoToken, "tid", TidType, true, false));
       formals.Add(new Formal(Token.NoToken, "t", ActionRewriter.ReferToTotalState(am.Name), true, false));
       formals.Add(new Formal(Token.NoToken, "t'", ActionRewriter.ReferToTotalState(am.Name), true, false));
       var req = new List<Expression>();
-      req.Add(new BinaryExpr(Token.NoToken, BinaryExpr.Opcode.In, new NameSegment(Token.NoToken, "tid", null),
-        new ExprDotName(Token.NoToken, new NameSegment(Token.NoToken, "t", null), "locals", null)));
+      req.Add(ParseExpression("tid in t.locals"));
       
-      BuiltIns.CreateArrowTypeDecl(formals.Count);
+      Program.BuiltIns.CreateArrowTypeDecl(formals.Count);
 
       return new Predicate(Token.NoToken, am.Name + "Next", false, false, true,
                            new List<TypeParameter>(), formals, req, new List<FrameExpression>(),
