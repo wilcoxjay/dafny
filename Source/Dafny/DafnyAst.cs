@@ -6351,6 +6351,19 @@ namespace Microsoft.Dafny {
     }
   }
 
+  public class CommitStmt : Statement {
+    public readonly Statement Body;
+    public CommitStmt(IToken tok, IToken endTok, [Captured] Statement body) 
+      : base(tok, endTok)
+    {
+      this.Body = body;
+    }
+
+    public override IEnumerable<Statement> SubStatements {
+      get { yield return Body; }
+    }
+  }
+
   public class BlockStmt : Statement {
     public readonly List<Statement> Body;
     public BlockStmt(IToken tok, IToken endTok, [Captured] List<Statement> body)

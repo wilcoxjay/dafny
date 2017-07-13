@@ -2064,12 +2064,18 @@ namespace Microsoft.Dafny
               }
             }
 
+            var actions = DeclareLocalStateActionType(actionPredicates);
+            newMembers.Add(actions);
+
             var amCloner = new ActionMethodCloner(Program, sharedState, sharedNames, actionPredicates, m, newDecls);
             foreach (MemberDecl member in c.Members) {
               if (member is ActionMethod) {
                 var am = (ActionMethod) member;
                 oldMembers.Add(am);
                 newMembers.Add(amCloner.CloneActionMethod(am));
+                if (am.Ens.Count > 0) {
+                  MakeReductionRequest(am, newMembers);
+                }
               }
             }
 
@@ -2082,6 +2088,14 @@ namespace Microsoft.Dafny
       }
 
       m.TopLevelDecls.AddRange(newDecls);
+    }
+
+    private TopLevelDecl DeclareLocalStateActionType(HashSet<string> actionPredicates) {
+      throw new NotImplementedException();
+    }
+
+    private void MakeReductionRequest(ActionMethod am, List<MemberDecl> newMembers) {
+      
     }
   }
 
@@ -2235,6 +2249,9 @@ namespace Microsoft.Dafny
       var i = 0;
       for (; nvars + i < body.Body.Count; i++) {
         var s = body.Body[nvars + i];
+        if (s is CommitStmt) {
+          s = ((CommitStmt)s).Body;
+        }
         if (s is UpdateStmt) {
           var u = (UpdateStmt)s;
           if (u.Rhss.Count != 1 || !(u.Rhss[0] is ExprRhs) 

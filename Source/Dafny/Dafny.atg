@@ -813,6 +813,7 @@ TOKENS
   reveal = "reveal".
   action = "action".
   module = "module".
+  commit = "commit".
 COMMENTS FROM "/*" TO "*/" NESTED
 COMMENTS FROM "//" TO lf
 IGNORE cr + lf + tab
@@ -863,7 +864,9 @@ DeclModifier<ref DeclModifierData dmod>
   | "static"                               (. dmod.IsStatic = true; CheckAndSetToken(ref dmod.StaticToken); .)
   | "protected"                            (. dmod.IsProtected = true; CheckAndSetToken(ref dmod.ProtectedToken); .)
   | "extern"                               (. dmod.IsExtern = true; CheckAndSetToken(ref dmod.ExternToken);
-                                              errors.Deprecated(t, "the 'extern' keyword has been deprecated; use the ':extern' attribute instead");
+                                              if (!DafnyOptions.O.CivlizedDafny) {
+                                                errors.Deprecated(t, "the 'extern' keyword has been deprecated; use the ':extern' attribute instead");
+                                              }
                                            .)
     [ stringToken                          (. bool isVerbatimString;
                                               string s = Util.RemoveParsedStringQuotes(t.val, out isVerbatimString);
@@ -1174,7 +1177,7 @@ FieldDecl<.DeclModifierData dmod, List<MemberDecl/*!*/>/*!*/ mm.>
 = (. Contract.Requires(cce.NonNullElements(mm));
      Attributes attrs = null;
      IToken/*!*/ id;  Type/*!*/ ty;
-     CheckDeclModifiers(dmod, "Fields", AllowedDeclModifiers.Ghost);
+     CheckDeclModifiers(dmod, "Fields", AllowedDeclModifiers.Ghost | (DafnyOptions.O.CivlizedDafny ? AllowedDeclModifiers.Extern : AllowedDeclModifiers.None));
   .)
   SYNC
   "var"
@@ -2132,6 +2135,7 @@ OneStmt<out Statement/*!*/ s>
     ";"                                (. s = label != null ? new BreakStmt(x, t, label) : new BreakStmt(x, t, breakCount); .)
   | ReturnStmt<out s>
   | SkeletonStmt<out s>
+  | CommitStmt<out s>
   )
   .
 
@@ -2179,6 +2183,12 @@ ReturnStmt<out Statement/*!*/ s>
                                         }
                                      .)
   .
+CommitStmt<out Statement/*!*/ s>
+= (. IToken beginTok; .)
+  "commit"               (. beginTok = t; .)
+  OneStmt<out s>    (. s = new CommitStmt(beginTok, s.EndTok, s); .)
+.
+
 UpdateStmt<out Statement/*!*/ s>
 = (. List<Expression> lhss = new List<Expression>();
      List<AssignmentRhs> rhss = new List<AssignmentRhs>();
