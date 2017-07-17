@@ -5438,6 +5438,12 @@ namespace Microsoft.Dafny {
 
   public class ActionMethod : Method
   {
+    // The sequence of low-level actions called by this method. Filled out during action rewriting.
+    internal List<string> Actions;
+    
+    // The location of the non-mover in the sequence. Filled out during action rewriting.
+    internal int CommitIndex;
+
     public ActionMethod(IToken tok, string name,
                  [Captured] List<TypeParameter> typeArgs,
                  [Captured] List<Formal> ins, [Captured] List<Formal> outs,
@@ -5448,7 +5454,8 @@ namespace Microsoft.Dafny {
                  Attributes attributes, IToken signatureEllipsis, Declaration clonedFrom = null)
       : base(tok, name, false, false, typeArgs, ins, outs, req, mod, ens, decreases, body, attributes, signatureEllipsis, clonedFrom)
     {
-
+      Actions = new List<string>();
+      CommitIndex = -1;
     }
   }
   // ------------------------------------------------------------------------------------------------------

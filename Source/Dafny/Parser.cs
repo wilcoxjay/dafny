@@ -290,6 +290,29 @@ public static Expression ParseExpression(string/*!*/ s, string/*!*/ fullFilename
   return e;
 }
 
+
+// This has to return Declaration because it might return a TopLevelDecl or a MemberDecl
+public static Declaration ParseTopLevelDecl(string/*!*/ s, string/*!*/ fullFilename, string/*!*/ filename, Include include, ModuleDecl module,
+                                             BuiltIns builtIns, Errors/*!*/ errors, bool verifyThisFile=true) {
+  Parser parser = SetupParser(s, fullFilename, filename, include, module, builtIns, errors, verifyThisFile);
+  parser.la = new Token();
+  parser.la.val = "";
+  parser.Get();
+  var defaultClassMembers = new List<MemberDecl>();
+  var moduleDef = new ModuleDefinition(Token.NoToken, "DummyModule", false, false, false, false, Token.NoToken, null, null, false);
+  parser.TopDecl(moduleDef, defaultClassMembers, true, false);
+
+  if (moduleDef.TopLevelDecls.Count == 1) {
+      return moduleDef.TopLevelDecls[0];
+  } else if (defaultClassMembers.Count == 1) {
+      return defaultClassMembers[0];
+  } else {
+      errors.SemErr(Token.NoToken, "ParseTopLevelDecl got wrong number of declarations");
+      return null;
+  }
+}
+
+
 ///<summary>
 /// Parses top-level things (modules, classes, datatypes, class members)
 /// and appends them in appropriate form to "module".

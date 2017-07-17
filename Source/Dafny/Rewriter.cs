@@ -1937,6 +1937,14 @@ namespace Microsoft.Dafny
       return Parser.ParseExpression(s, "<none>", "<none>", null, p.DefaultModule, p.BuiltIns, new Errors(p.reporter));
     }
 
+    public static Declaration ParseTopLevelDecl(string s, Program p) {
+      return Parser.ParseTopLevelDecl(s, "<none>", "<none>", null, p.DefaultModule, p.BuiltIns, new Errors(p.reporter));
+    }
+
+    public Declaration ParseTopLevelDecl(string s) {
+      return ParseTopLevelDecl(s, Program);
+    }
+
     protected static Type ReferToType(string name, List<Type> optTypeArgs = null) {
       return new UserDefinedType(Token.NoToken, name, optTypeArgs);
     }
@@ -2039,7 +2047,7 @@ namespace Microsoft.Dafny
 
             foreach (MemberDecl member in c.Members) {
               if (member is Field) {
-                var f = (Field) member;
+                var f = (Field)member;
                 sharedFields.Add(f);
                 sharedNames.Add(f.Name);
               }
@@ -2057,24 +2065,23 @@ namespace Microsoft.Dafny
 
             foreach (MemberDecl member in c.Members) {
               if (member is ActionPredicate) {
-                var ap = (ActionPredicate) member;
+                var ap = (ActionPredicate)member;
                 oldMembers.Add(ap);
                 newMembers.Add(apCloner.CloneActionPredicate(ap));
                 actionPredicates.Add(ap.Name);
               }
             }
 
-            var actions = DeclareLocalStateActionType(actionPredicates);
-            newMembers.Add(actions);
+            DeclareGenericReductionParameters(newDecls, actionPredicates);
 
             var amCloner = new ActionMethodCloner(Program, sharedState, sharedNames, actionPredicates, m, newDecls);
             foreach (MemberDecl member in c.Members) {
               if (member is ActionMethod) {
-                var am = (ActionMethod) member;
+                var am = (ActionMethod)member;
                 oldMembers.Add(am);
                 newMembers.Add(amCloner.CloneActionMethod(am));
                 if (am.Ens.Count > 0) {
-                  MakeReductionRequest(am, newMembers);
+                  MakeReductionRequest(am, newDecls, newMembers);
                 }
               }
             }
@@ -2090,12 +2097,111 @@ namespace Microsoft.Dafny
       m.TopLevelDecls.AddRange(newDecls);
     }
 
+    private void DeclareGenericReductionParameters(List<TopLevelDecl> newDecls, HashSet<string> actionPredicates) {
+      var actions = DeclareLocalStateActionType(actionPredicates);
+      newDecls.Add(actions);
+
+      DeclareActionSets(newDecls, actions);
+
+      newDecls.Add(DeclareConfigType());
+      
+      newDecls.Add(DeclareIdMap(actions));
+    }
+
+    private void DeclareActionSets(List<TopLevelDecl> newDecls, TopLevelDecl actions) {
+      throw new NotImplementedException();
+    }
+
+    private TopLevelDecl DeclareNextSet(ActionMethod am) {
+      throw new NotImplementedException();
+    }
+
+    private TopLevelDecl DeclareInitSet(ActionMethod am) {
+      throw new NotImplementedException();
+    }
+
+    private TopLevelDecl DeclareInitPredicate(ActionMethod am) {
+      throw new NotImplementedException();
+    }
+
+    private TopLevelDecl DeclareIdMap(TopLevelDecl actions) {
+      throw new NotImplementedException();
+    }
+
+    private TopLevelDecl DeclareConfigType() {
+      throw new NotImplementedException();
+    }
+
     private TopLevelDecl DeclareLocalStateActionType(HashSet<string> actionPredicates) {
       throw new NotImplementedException();
     }
 
-    private void MakeReductionRequest(ActionMethod am, List<MemberDecl> newMembers) {
-      
+    private void MakeReductionRequest(ActionMethod am, List<TopLevelDecl> newDecls, List<MemberDecl> newMembers) {
+      // newDecls.Add(DeclareInitPredicate(am));
+      // TODO: check for init predicate
+      newDecls.Add(DeclareInitSet(am));
+      newDecls.Add(DeclareNextSet(am));
+
+      newDecls.Add(DeclareSpecInitPredicate(am));
+      newDecls.Add(DeclareSpecInitSet(am));
+      newDecls.Add(DeclareSpecNext(am));
+
+      // TODO: handle invariants somewhere
+
+      newDecls.Add(DeclareReducibles(am));
+      DeclareIntermediateInvariants(am, newDecls);
+
+      newDecls.Add(DeclareReductionRequestTypeAlias(am));
+      newDecls.Add(DeclareLowAnnotatedBehaviorTypeAlias(am));
+      newDecls.Add(DeclareHighAnnotatedBehaviorTypeAlias(am));
+      newDecls.Add(DeclareReductionRequest(am));
+
+      ProveReduction(am, newDecls);
+    }
+
+    private TopLevelDecl DeclareHighAnnotatedBehaviorTypeAlias(ActionMethod am) {
+      throw new NotImplementedException();
+    }
+
+    private TopLevelDecl DeclareLowAnnotatedBehaviorTypeAlias(ActionMethod am) {
+      throw new NotImplementedException();
+    }
+
+    private void ProveReduction(ActionMethod am, List<TopLevelDecl> newDecls) {
+      newDecls.Add(ProveReductionRequestValid(am));
+      Declaration lem = ParseTopLevelDecl($"lemma lemma_Reduce{am.Name}(lb");
+    }
+
+    private TopLevelDecl ProveReductionRequestValid(ActionMethod am) {
+      throw new NotImplementedException();
+    }
+
+    private TopLevelDecl DeclareReductionRequest(ActionMethod am) {
+      throw new NotImplementedException();
+    }
+
+    private TopLevelDecl DeclareReductionRequestTypeAlias(ActionMethod am) {
+      throw new NotImplementedException();
+    }
+
+    private void DeclareIntermediateInvariants(ActionMethod am, List<TopLevelDecl> newDecls) {
+      throw new NotImplementedException();
+    }
+
+    private TopLevelDecl DeclareReducibles(ActionMethod am) {
+      throw new NotImplementedException();
+    }
+
+    private TopLevelDecl DeclareSpecInitSet(ActionMethod am) {
+      throw new NotImplementedException();
+    }
+
+    private TopLevelDecl DeclareSpecInitPredicate(ActionMethod am) {
+      throw new NotImplementedException();
+    }
+
+    private TopLevelDecl DeclareSpecNext(ActionMethod am) {
+      throw new NotImplementedException();
     }
   }
 
@@ -2249,8 +2355,9 @@ namespace Microsoft.Dafny
       var i = 0;
       for (; nvars + i < body.Body.Count; i++) {
         var s = body.Body[nvars + i];
-        if (s is CommitStmt) {
+        if (s is CommitStmt) {  // TODO: check that there is exactly one commit statement
           s = ((CommitStmt)s).Body;
+          am.CommitIndex = i;
         }
         if (s is UpdateStmt) {
           var u = (UpdateStmt)s;
@@ -2259,8 +2366,10 @@ namespace Microsoft.Dafny
               || !(((u.Rhss[0] as ExprRhs).Expr as ApplySuffix).Lhs is NameSegment)) {
             Program.reporter.Warning(MessageSource.Rewriter, s.Tok, "Malformed action call. RHS of update contain exactly one call.");
           }
+          
           var callExpr = (u.Rhss[0] as ExprRhs).Expr as ApplySuffix;
           var calleeName = (callExpr.Lhs as NameSegment).Name;
+          am.Actions.Add(calleeName);
           var args = new List<Expression>();
           args.Add(new NameSegment(Token.NoToken, "tid", null));
           args.Add(new ExprDotName(Token.NoToken, new NameSegment(Token.NoToken, "t", null), "shared", null));
