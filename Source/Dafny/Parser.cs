@@ -1639,11 +1639,11 @@ int StringToInt(string s, int defaultValue, string errString) {
 			Attribute(ref attrs);
 		}
 		FIdentType(out id, out ty);
-		mm.Add(new Field(id, id.val, dmod.IsGhost, ty, attrs)); 
+		mm.Add(new Field(id, id.val, dmod.IsGhost, ty, attrs, dmod.IsExtern)); 
 		while (la.kind == 23) {
 			Get();
 			FIdentType(out id, out ty);
-			mm.Add(new Field(id, id.val, dmod.IsGhost, ty, attrs)); 
+			mm.Add(new Field(id, id.val, dmod.IsGhost, ty, attrs, dmod.IsExtern)); 
 		}
 		OldSemi();
 	}

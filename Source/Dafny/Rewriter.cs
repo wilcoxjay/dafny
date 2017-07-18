@@ -1,13 +1,13 @@
 using System;
 using System.Collections.Generic;
 using System.Diagnostics.Contracts;
+using System.Text;
 using static Microsoft.Dafny.Predicate;
 using Bpl = Microsoft.Boogie;
 using IToken = Microsoft.Boogie.IToken;
 using Token = Microsoft.Boogie.Token;
 
-namespace Microsoft.Dafny
-{
+namespace Microsoft.Dafny {
   public abstract class IRewriter
   {
     protected readonly ErrorReporter reporter;
@@ -1922,11 +1922,10 @@ namespace Microsoft.Dafny
     }
   }
 
-  public class ActionRewriter : IRewriter
-  {
+  public class ActionRewriter : IRewriter {
 
     public Program Program;
-    
+
     public ActionRewriter(Program program)
       : base(program.reporter) {
       Contract.Requires(program.reporter != null);
@@ -1934,27 +1933,32 @@ namespace Microsoft.Dafny
     }
 
     public static Expression ParseExpression(string s, Program p) {
-      return Parser.ParseExpression(s, "<none>", "<none>", null, p.DefaultModule, p.BuiltIns, new Errors(p.reporter));
+      return Parser.ParseExpression(s, "none", "none", null, p.DefaultModule, p.BuiltIns, new Errors(new ErrorReporterWrapper(p.reporter, s)));
     }
 
     public static Declaration ParseTopLevelDecl(string s, Program p) {
-      return Parser.ParseTopLevelDecl(s, "<none>", "<none>", null, p.DefaultModule, p.BuiltIns, new Errors(p.reporter));
+      return Parser.ParseTopLevelDecl(s, "none", "none", null, p.DefaultModule, p.BuiltIns, new Errors(new ErrorReporterWrapper(p.reporter, s)));
     }
 
     public Declaration ParseTopLevelDecl(string s) {
       return ParseTopLevelDecl(s, Program);
     }
 
+    public Expression ParseExpression(string s) {
+      return ParseExpression(s, Program);
+    }
+
+
     protected static Type ReferToType(string name, List<Type> optTypeArgs = null) {
       return new UserDefinedType(Token.NoToken, name, optTypeArgs);
     }
     protected static TopLevelDecl DeclareTotalState(ModuleDefinition m) {
       var formals = new List<Formal>();
-      formals.Add(new Formal(Token.NoToken, "shared", ReferToType("SharedState"), true, false));
+      formals.Add(new Formal(Token.NoToken, "shared", ReferToType("S"), true, false));
       formals.Add(new Formal(Token.NoToken, "locals", new MapType(false, ReferToType("Tid"), ReferToType("L")), true, false));
 
-      return new IndDatatypeDecl(Token.NoToken, "TotalState", m, 
-                                 new List<TypeParameter>() { new TypeParameter(Token.NoToken, "L") },
+      return new IndDatatypeDecl(Token.NoToken, "TotalState", m,
+                                 new List<TypeParameter>() {  new TypeParameter(Token.NoToken, "S"), new TypeParameter(Token.NoToken, "L") },
                                  new List<DatatypeCtor> { new DatatypeCtor(Token.NoToken, "TotalState", formals, null) },
                                  null);
     }
@@ -1968,6 +1972,7 @@ namespace Microsoft.Dafny
 
     public static Type ReferToTotalState(string name) {
       return ReferToType("TotalState", new List<Type> {
+        ReferToType("SharedState"),
         ReferToLocalState(name)
       });
     }
@@ -1977,8 +1982,8 @@ namespace Microsoft.Dafny
       formals.Add(new Formal(Token.NoToken, "pc", ReferToType("PC"), true, false));
       formals.Add(new Formal(Token.NoToken, "local", ReferToType("L"), true, false));
 
-      return new IndDatatypeDecl(Token.NoToken, "LocalState", m, 
-                                 new List<TypeParameter>() {  new TypeParameter(Token.NoToken, "PC"), new TypeParameter(Token.NoToken, "L") },
+      return new IndDatatypeDecl(Token.NoToken, "LocalState", m,
+                                 new List<TypeParameter>() { new TypeParameter(Token.NoToken, "PC"), new TypeParameter(Token.NoToken, "L") },
                                  new List<DatatypeCtor> { new DatatypeCtor(Token.NoToken, "LocalState", formals, null) },
                                  null);
     }
@@ -2028,7 +2033,7 @@ namespace Microsoft.Dafny
       return new IndDatatypeDecl(Token.NoToken, PCBaseName(name), parentModule, new List<TypeParameter>(),
                                  ctors, null);
     }
-    
+
     internal override void PreResolve(ModuleDefinition m) {
       if (!m.IsAction) {
         return;
@@ -2037,12 +2042,13 @@ namespace Microsoft.Dafny
       newDecls.Add(DeclareTid(m));
       newDecls.Add(DeclareLocalState(m));
       newDecls.Add(DeclareTotalState(m));
-      
+
       foreach (var d in m.TopLevelDecls) {
         if (d is ClassDecl) {
-          var c = (ClassDecl) d;
+          var c = (ClassDecl)d;
           if (c.IsDefaultClass) {
             var sharedFields = new List<Field>();
+            var externFields = new List<Field>();
             var sharedNames = new HashSet<string>();
 
             foreach (MemberDecl member in c.Members) {
@@ -2050,6 +2056,9 @@ namespace Microsoft.Dafny
                 var f = (Field)member;
                 sharedFields.Add(f);
                 sharedNames.Add(f.Name);
+                if (f.IsExternal) {
+                  externFields.Add(f);
+                }
               }
             }
 
@@ -2060,6 +2069,14 @@ namespace Microsoft.Dafny
             var newMembers = new List<MemberDecl>();
             var oldMembers = new List<MemberDecl>();
             oldMembers.AddRange(sharedFields);
+
+            if (!FindAndDeclareSharedStateInit(c.Members, oldMembers, newMembers, sharedNames)) {
+              Program.reporter.Error(MessageSource.Rewriter, c.tok, "Expected predicate called Init to describe initial states.");
+            }
+
+            if (!FindAndDeclareSharedStateInv(c.Members, oldMembers, newMembers, sharedNames)) {
+              Program.reporter.Error(MessageSource.Rewriter, c.tok, "Expected predicate called Inv to describe global invariant over shared state.");
+            }
 
             var actionPredicates = new HashSet<string>();
 
@@ -2072,7 +2089,7 @@ namespace Microsoft.Dafny
               }
             }
 
-            DeclareGenericReductionParameters(newDecls, actionPredicates);
+            DeclareGenericReductionParameters(actionPredicates, externFields, newMembers, newDecls);
 
             var amCloner = new ActionMethodCloner(Program, sharedState, sharedNames, actionPredicates, m, newDecls);
             foreach (MemberDecl member in c.Members) {
@@ -2081,7 +2098,7 @@ namespace Microsoft.Dafny
                 oldMembers.Add(am);
                 newMembers.Add(amCloner.CloneActionMethod(am));
                 if (am.Ens.Count > 0) {
-                  MakeReductionRequest(am, newDecls, newMembers);
+                  MakeReductionRequest(am, sharedNames, newDecls, newMembers);
                 }
               }
             }
@@ -2097,136 +2114,467 @@ namespace Microsoft.Dafny
       m.TopLevelDecls.AddRange(newDecls);
     }
 
-    private void DeclareGenericReductionParameters(List<TopLevelDecl> newDecls, HashSet<string> actionPredicates) {
-      var actions = DeclareLocalStateActionType(actionPredicates);
+    private bool FindAndDeclareSharedStateInv(List<MemberDecl> haystack, List<MemberDecl> oldMembers, List<MemberDecl> newMembers, HashSet<string> sharedNames) {
+      var found = false;
+      foreach (MemberDecl member in haystack) {
+        if (member is Predicate && member.Name == "Inv") {
+          var pred = (Predicate)member;
+          oldMembers.Add(member);
+          newMembers.Add(DeclareSharedStateInv(sharedNames, pred));
+          found = true;
+          break;
+        }
+      }
+      return found;
+    }
+
+    
+    private bool FindAndDeclareSharedStateInit(List<MemberDecl> haystack, List<MemberDecl> oldMembers, List<MemberDecl> newMembers, ISet<string> sharedNames) {
+      var found = false;
+      foreach (MemberDecl member in haystack) {
+        if (member is Predicate && member.Name == "Init") {
+          var pred = (Predicate)member;
+          oldMembers.Add(member);
+          newMembers.Add(DeclareSharedStateInit(sharedNames, pred));
+          found = true;
+          break;
+        }
+      }
+      return found;
+    }
+
+    private MemberDecl DeclareSharedStateInv(HashSet<string> sharedNames, Predicate pred) {
+       var inv = (Function)ParseTopLevelDecl(
+                  $"predicate SharedStateInv(s: SharedState)" +
+                  $"{{" +
+                  $"    false  /* dummy to be replaced */" +
+                  $"}}"
+                  );
+      inv.Body = new ActionExpressionCloner(sharedNames).CloneExpr(pred.Body);
+      return inv;
+    }
+    
+
+    private Function DeclareSharedStateInit(ISet<string> sharedNames, Predicate pred) {
+      var init = (Function)ParseTopLevelDecl(
+                  $"predicate SharedStateInit(s: SharedState)" +
+                  $"{{" +
+                  $"    false  /* dummy to be replaced */" +
+                  $"}}"
+                  );
+      init.Body = new ActionExpressionCloner(sharedNames).CloneExpr(pred.Body);
+      return init;
+    }
+
+
+    private void DeclareGenericReductionParameters(HashSet<string> actionPredicates, List<Field> externFields, List<MemberDecl> newMembers, List<TopLevelDecl> newDecls) {
+      var actions = DeclareActionType(actionPredicates);
       newDecls.Add(actions);
 
-      DeclareActionSets(newDecls, actions);
+      DeclareActionSets(newMembers, actionPredicates);
+
+      newMembers.Add(DeclareRefinementRelation(externFields));
 
       newDecls.Add(DeclareConfigType());
-      
-      newDecls.Add(DeclareIdMap(actions));
+
+      newMembers.Add(DeclareIdMap());      
     }
 
-    private void DeclareActionSets(List<TopLevelDecl> newDecls, TopLevelDecl actions) {
-      throw new NotImplementedException();
+    private MemberDecl DeclareRefinementRelation(List<Field> externFields) {
+      var func = (Function)ParseTopLevelDecl(
+        $"predicate SharedRefinementRelationPredicate(s: SharedState, s': SharedState){{ false /* dummy body to be replaced */ }}"
+        );
+
+      var builder = new StringBuilder();
+      foreach (var f in externFields) {
+        builder.Append($"&& s.{f.Name} == s'.{f.Name}");
+      }
+
+      func.Body = ParseExpression(builder.ToString());
+
+      return func;
     }
 
-    private TopLevelDecl DeclareNextSet(ActionMethod am) {
-      throw new NotImplementedException();
+    private void DeclareActionSets(List<MemberDecl> newMembers, ISet<string> actionPredicates) {
+      foreach (var act in actionPredicates) {
+        newMembers.Add((MemberDecl)ParseTopLevelDecl(
+          $"function {act}Actions(): iset<Action>" +
+          $"{{" +
+          $"    iset a: Action | a.Action{act}? :: a" +
+          $"}}"
+          ));
+      }
     }
 
-    private TopLevelDecl DeclareInitSet(ActionMethod am) {
-      throw new NotImplementedException();
+    private MemberDecl DeclareNextSet(ActionMethod am) {
+      return (MemberDecl)ParseTopLevelDecl(
+        $"function {am.Name}NextSet(): iset<ActionTriple<{am.Name}TotalState, Action>>" +
+        $"{{" +
+        $"    iset t: {am.Name}TotalState, t', a: Action |" +
+        $"        a.tid in t.locals && {am.Name}Next(a.tid, t, t', a) ::" +
+        $"        ActionTriple(t, t', a)" +
+        $"}}"
+        );
     }
 
-    private TopLevelDecl DeclareInitPredicate(ActionMethod am) {
-      throw new NotImplementedException();
+    private MemberDecl DeclareSpecNextSet(ActionMethod am) {
+      return (MemberDecl)ParseTopLevelDecl(
+        $"function {am.Name}SpecNextSet(): iset<ActionTriple<{am.Name}TotalState, {am.Name}SpecAction>>" +
+        $"{{" +
+        $"    iset t: {am.Name}TotalState, t', a: {am.Name}SpecAction |" +
+        $"        a.tid in t.locals && {am.Name}SpecNext(t, t', a) ::" +
+        $"        ActionTriple(t, t', a)" +
+        $"}}"
+        );
     }
 
-    private TopLevelDecl DeclareIdMap(TopLevelDecl actions) {
-      throw new NotImplementedException();
+    private MemberDecl DeclareInitSet(ActionMethod am) {
+      return (MemberDecl)ParseTopLevelDecl(
+        $"function {am.Name}InitSet(): iset<ConfigStatePair<Config, {am.Name}TotalState>>" +
+        $"{{" +
+        $"    iset t | Init(t) :: ConfigStatePair(Config, t)" +
+        $"}}"
+        );
+    }
+
+    private MemberDecl DeclareInvSet(ActionMethod am) {
+      return (MemberDecl)ParseTopLevelDecl(
+        $"function {am.Name}InvSet(): iset<ConfigStatePair<Config, {am.Name}TotalState>>" +
+        $"{{" +
+        $"    iset t | {am.Name}Inv(t) :: ConfigStatePair(Config, t)" +
+        $"}}"
+        );
+    }
+
+    private MemberDecl DeclareIdMap() {
+      return (MemberDecl)ParseTopLevelDecl(
+        $"function IDmap(): imap<Action, Tid>" +
+        $"{{" +
+        $"    imap a: Action :: a.tid" +
+        $"}}"
+        );
     }
 
     private TopLevelDecl DeclareConfigType() {
-      throw new NotImplementedException();
+      return (TopLevelDecl)ParseTopLevelDecl(
+        $"datatype Config = Config"
+        );
     }
 
-    private TopLevelDecl DeclareLocalStateActionType(HashSet<string> actionPredicates) {
-      throw new NotImplementedException();
+    private TopLevelDecl DeclareActionType(ISet<string> actionPredicates) {
+      var builder = new StringBuilder();
+      foreach (var act in actionPredicates) {
+        builder.Append($"  | Action{act}(tid: Tid)\n");
+      }
+
+      return (TopLevelDecl)ParseTopLevelDecl(
+        $"datatype Action =" +
+        $"{builder.ToString()}"
+        );
     }
 
-    private void MakeReductionRequest(ActionMethod am, List<TopLevelDecl> newDecls, List<MemberDecl> newMembers) {
-      // newDecls.Add(DeclareInitPredicate(am));
-      // TODO: check for init predicate
-      newDecls.Add(DeclareInitSet(am));
-      newDecls.Add(DeclareNextSet(am));
+    private void MakeReductionRequest(ActionMethod am, ISet<string> sharedNames, List<TopLevelDecl> newDecls, List<MemberDecl> newMembers) {
+      newMembers.Add(DeclareLocalStateInitPredicate(am));
+      newMembers.Add(DeclareInitPredicate(am));
+      newMembers.Add(DeclareInitSet(am));
+      newMembers.Add(DeclareInvPredicate(am));
+      newMembers.Add(DeclareInvSet(am));
+      newMembers.Add(DeclareNextSet(am));
+      newMembers.Add(DeclareSpecNextSet(am));
 
-      newDecls.Add(DeclareSpecInitPredicate(am));
-      newDecls.Add(DeclareSpecInitSet(am));
-      newDecls.Add(DeclareSpecNext(am));
+      newMembers.Add(DeclareSpecNext(am));
+
+      newMembers.Add(DeclareSpec(am, sharedNames));
+
+      newDecls.Add(DeclareSpecAction(am));
 
       // TODO: handle invariants somewhere
 
-      newDecls.Add(DeclareReducibles(am));
-      DeclareIntermediateInvariants(am, newDecls);
+      DeclareIntermediateInvariants(am, newMembers);
 
+      newDecls.Add(DeclareAMTotalStateAlias(am));
+      
       newDecls.Add(DeclareReductionRequestTypeAlias(am));
       newDecls.Add(DeclareLowAnnotatedBehaviorTypeAlias(am));
       newDecls.Add(DeclareHighAnnotatedBehaviorTypeAlias(am));
-      newDecls.Add(DeclareReductionRequest(am));
 
-      ProveReduction(am, newDecls);
+      newMembers.Add(DeclareLowAnnotatedBehaviorSpec(am));
+      newMembers.Add(DeclareHighAnnotatedBehaviorSpec(am));
+
+      newMembers.Add(DeclareRefinementRelationSet(am));
+
+      newMembers.Add(DeclareSpecActionSet(am));
+
+      DeclareReducibles(am, newMembers);
+
+      newMembers.Add(DeclareReductionRequest(am));
+
+      ProveReduction(am, newMembers);
+    }
+
+    private MemberDecl DeclareRefinementRelationSet(ActionMethod am) {
+      return (MemberDecl)ParseTopLevelDecl(
+        $"function {am.Name}RefinementRelation(): RefinementRelation<{am.Name}TotalState, {am.Name}TotalState> " +
+        $"{{" +
+        $"    iset t: {am.Name}TotalState, t': {am.Name}TotalState |" +
+        $"        SharedRefinementRelationPredicate(t.shared, t'.shared) :: " +
+        $"        RefinementPair(t, t')" +
+        $"}}"
+        );
+    }
+
+    private MemberDecl DeclareHighAnnotatedBehaviorSpec(ActionMethod am) {
+      return (MemberDecl)ParseTopLevelDecl(
+        $"function {am.Name}SpecAnnotatedBehaviorSpec(): AnnotatedBehaviorSpec<Config, {am.Name}TotalState, {am.Name}SpecAction>" +
+        $"{{" +
+        $"    AnnotatedBehaviorSpec(" +
+        $"        {am.Name}InitSet()," +
+        $"        {am.Name}SpecNextSet()" +
+        $"        )" +
+        $"}}"
+        );
+    }
+
+    private MemberDecl DeclareLowAnnotatedBehaviorSpec(ActionMethod am) {
+      return (MemberDecl)ParseTopLevelDecl(
+        $"function {am.Name}AnnotatedBehaviorSpec(): AnnotatedBehaviorSpec<Config, {am.Name}TotalState, Action>" +
+        $"{{" +
+        $"    AnnotatedBehaviorSpec(" +
+        $"        {am.Name}InitSet()," +
+        $"        {am.Name}NextSet()" +
+        $"        )" +
+        $"}}"
+        );
+    }
+
+    private TopLevelDecl DeclareAMTotalStateAlias(ActionMethod am) {
+      return (TopLevelDecl)ParseTopLevelDecl(
+        $"type {am.Name}TotalState = TotalState<SharedState, LocalState<{am.Name}PC, {am.Name}Local>>"
+        );
+    }
+
+    private MemberDecl DeclareLocalStateInitPredicate(ActionMethod am) {
+      return (MemberDecl)ParseTopLevelDecl(
+        $"predicate {am.Name}LocalStateInit(l: LocalState<{am.Name}PC, {am.Name}Local>)" +
+        $"{{" +
+        $"    l.pc == {am.Name}PC0" +
+        $"}}"
+        );
+    }
+
+    private MemberDecl DeclareInitPredicate(ActionMethod am) {
+      return (MemberDecl)ParseTopLevelDecl(
+        $"predicate Init(t: {am.Name}TotalState)" +
+        $"{{" +
+        $"    && SharedStateInit(t.shared)" +
+        $"    && forall tid :: tid in t.locals ==> {am.Name}LocalStateInit(t.locals[tid])" +
+        $"}}"
+        );
+    }
+
+    private MemberDecl DeclareInvPredicate(ActionMethod am) {
+      return (MemberDecl)ParseTopLevelDecl(
+        $"predicate {am.Name}Inv(t: {am.Name}TotalState)" +
+        $"{{" +
+        $"    && SharedStateInv(t.shared)" +
+        $"}}"
+        );
+    }
+
+    private MemberDecl DeclareSpec(ActionMethod am, ISet<string> sharedNames) {
+      var pred = (Function)ParseTopLevelDecl(
+        $"predicate {am.Name}Spec(tid: Tid, s: SharedState, s': SharedState)" +
+        $"{{ false /* dummy body to be replaced */ }}"   
+        );
+
+      pred.Body = new TwoStateActionExpressionCloner(Program, sharedNames).CloneExpr(am.Ens[0].E);
+
+      return pred;
+    }
+
+    private TopLevelDecl DeclareSpecAction(ActionMethod am) {
+      return (TopLevelDecl)ParseTopLevelDecl(
+        $"datatype {am.Name}SpecAction = {am.Name}SpecAction(tid: Tid)"
+        );
     }
 
     private TopLevelDecl DeclareHighAnnotatedBehaviorTypeAlias(ActionMethod am) {
-      throw new NotImplementedException();
+      return (TopLevelDecl)ParseTopLevelDecl(
+        $"type {am.Name}SpecAnnotatedBehavior = AnnotatedBehavior<Config, {am.Name}TotalState, {am.Name}SpecAction>"
+        );
     }
 
     private TopLevelDecl DeclareLowAnnotatedBehaviorTypeAlias(ActionMethod am) {
-      throw new NotImplementedException();
+      return (TopLevelDecl)ParseTopLevelDecl(
+        $"type {am.Name}AnnotatedBehavior = AnnotatedBehavior<Config, {am.Name}TotalState, Action>"
+        );
     }
 
-    private void ProveReduction(ActionMethod am, List<TopLevelDecl> newDecls) {
-      newDecls.Add(ProveReductionRequestValid(am));
-      Declaration lem = ParseTopLevelDecl($"lemma lemma_Reduce{am.Name}(lb");
+    private void ProveReduction(ActionMethod am, List<MemberDecl> newMembers) {
+      newMembers.Add(ProveReductionRequestValid(am));
+      Declaration lem = ParseTopLevelDecl(
+        $"lemma lemma_Reduce{am.Name}(lb: {am.Name}AnnotatedBehavior)" +
+        $"  returns (hb: {am.Name}SpecAnnotatedBehavior)" +
+        $"  requires AnnotatedBehaviorSatisfiesSpec(lb, {am.Name}ReductionRequest().lspec)" +
+        $"  ensures  AnnotatedBehaviorSatisfiesSpec(hb, {am.Name}ReductionRequest().hspec)" +
+        $"  ensures  BehaviorRefinesBehavior(lb.states, hb.states, {am.Name}ReductionRequest().relation)" +
+        $"{{" +
+        $"    lemma_{am.Name}ReductionRequestValid();" +
+        $"    hb := lemma_PerformCrossLayerReduction({am.Name}ReductionRequest(), lb);" +
+        $"}}");
+
+      newMembers.Add((MemberDecl)lem);
     }
 
-    private TopLevelDecl ProveReductionRequestValid(ActionMethod am) {
-      throw new NotImplementedException();
+    private MemberDecl ProveReductionRequestValid(ActionMethod am) {
+      return (MemberDecl)ParseTopLevelDecl(
+        $"lemma lemma_{am.Name}ReductionRequestValid()" +
+        $"  ensures ValidCrossLayerReductionRequest({am.Name}ReductionRequest())" +
+        $"{{}}");
     }
 
-    private TopLevelDecl DeclareReductionRequest(ActionMethod am) {
-      throw new NotImplementedException();
+    private MemberDecl DeclareReductionRequest(ActionMethod am) {
+      return (MemberDecl)ParseTopLevelDecl(
+        $"function {am.Name}ReductionRequest(): {am.Name}ReductionRequestType" +
+        $"{{" +
+        $"   CrossLayerReductionRequest(" +
+        $"       {am.Name}AnnotatedBehaviorSpec(), " +
+        $"       {am.Name}SpecAnnotatedBehaviorSpec(), " +
+        $"       {am.Name}RefinementRelation()," +
+        $"       IDmap()," +
+        $"       {am.Name}InvSet()," +
+        $"       {am.Name}Reducibles()," +
+        $"       {am.Name}IntermediateInvariants()," +
+        $"       {am.CommitIndex}," +
+        $"       {am.Name}SpecActionSet()" +
+        $"    )" +
+        $"}}"
+        );
     }
 
     private TopLevelDecl DeclareReductionRequestTypeAlias(ActionMethod am) {
-      throw new NotImplementedException();
+      return (TopLevelDecl)ParseTopLevelDecl(
+        $"type {am.Name}ReductionRequestType = CrossLayerReductionRequest<Config, {am.Name}TotalState, Action, {am.Name}SpecAction, Tid>"
+        );
     }
 
-    private void DeclareIntermediateInvariants(ActionMethod am, List<TopLevelDecl> newDecls) {
-      throw new NotImplementedException();
+    private void DeclareIntermediateInvariants(ActionMethod am, List<MemberDecl> newMembers) {
+      var builder = new StringBuilder();
+
+      bool started = false;
+      var i = 1;
+      foreach (var act in am.Actions) {
+        if (i == am.Actions.Count - 1) {
+          break;
+        }
+        newMembers.Add((MemberDecl)ParseTopLevelDecl(
+          $"function After{act}Inv(): iset<StateActorPair<{am.Name}TotalState, Tid>>" +
+          $"{{" +
+          $"    iset t: {am.Name}TotalState, tid: Tid |" +
+          $"        && tid in t.locals" +
+          $"        && t.locals[tid].pc == {am.Name}PC{i}" +
+          $"        :: StateActorPair(t, tid)" +
+          $"}}"
+          ));
+        if (started) {
+          builder.Append(", ");
+        }
+        started = true;
+        builder.Append($"After{act}Inv()");
+        i++;
+      }
+
+      newMembers.Add((MemberDecl)ParseTopLevelDecl(
+        $"function {am.Name}IntermediateInvariants(): seq<iset<StateActorPair<{am.Name}TotalState, Tid>>>" +
+        $"{{" +
+        $"    [{builder.ToString()}]" +
+        $"}}"
+        ));
     }
 
-    private TopLevelDecl DeclareReducibles(ActionMethod am) {
-      throw new NotImplementedException();
+    private void DeclareReducibles(ActionMethod am, List<MemberDecl> newMembers) {
+      var builder = new StringBuilder();
+
+      bool started = false;
+      foreach (var act in am.Actions) {
+        if (started) {
+          builder.Append(", ");
+        }
+        started = true;
+
+        builder.Append($"{act}Actions()");
+      }
+
+      newMembers.Add((MemberDecl)ParseTopLevelDecl(
+        $"function {am.Name}Reducibles(): seq<iset<Action>>" +
+        $"{{" +
+        $"    [{builder.ToString()}]" +
+        $"}}"
+        ));
     }
 
-    private TopLevelDecl DeclareSpecInitSet(ActionMethod am) {
-      throw new NotImplementedException();
+    private MemberDecl DeclareSpecNext(ActionMethod am) {
+      return (MemberDecl)ParseTopLevelDecl(
+        $"predicate {am.Name}SpecNext(t: {am.Name}TotalState, t': {am.Name}TotalState, a: {am.Name}SpecAction)" +
+        $"    requires a.tid in t.locals" +
+        $"{{" +
+        $"   && (forall tid' :: tid' in t.locals <==> tid' in t'.locals)" +
+        $"   && (forall tid' :: tid' in t.locals && a.tid != tid' ==> t'.locals[tid'] == t.locals[tid'])" +
+        $"   && if t.locals[a.tid].pc == {am.Name}PC0 then" +
+        $"           && {am.Name}Spec(a.tid, t.shared, t'.shared)" +
+        $"           && t'.locals[a.tid].pc == {am.Name}PC{am.Actions.Count}" +
+        $"       else false" +
+        $"}}"
+        );
     }
 
-    private TopLevelDecl DeclareSpecInitPredicate(ActionMethod am) {
-      throw new NotImplementedException();
-    }
-
-    private TopLevelDecl DeclareSpecNext(ActionMethod am) {
-      throw new NotImplementedException();
+    private MemberDecl DeclareSpecActionSet(ActionMethod am) {
+      return (MemberDecl)ParseTopLevelDecl(
+        $"function {am.Name}SpecActionSet(): iset<{am.Name}SpecAction>" +
+        $"{{" +
+        $"    iset tid: Tid | true :: {am.Name}SpecAction(tid)" +
+        $"}}"
+        );
     }
   }
 
-  class ActionPredicateCloner : Cloner {
+  class ActionExpressionCloner : Cloner {
+    protected ISet<string> SharedNames;
 
-    protected IndDatatypeDecl SharedState;
-    protected Type SharedStateType;
-    protected Type TidType;
+    public ActionExpressionCloner(ISet<string> sharedNames) {
+      SharedNames = sharedNames;
+    }
+
+    public virtual Expression ReferenceSharedState(IToken tok, string name) {
+      return new ExprDotName(tok, new NameSegment(tok, "s", null), name, null);
+    }
+
+    public override Expression CloneExpr(Expression expr) {
+     if (expr is NameSegment) {
+        var ns = (NameSegment)expr;
+        if (SharedNames.Contains(ns.Name)) {
+          return ReferenceSharedState(expr.tok, ns.Name);
+        }
+      }
+
+      return base.CloneExpr(expr);
+    }
+  }
+
+  class TwoStateActionExpressionCloner : Cloner {
     protected ISet<string> SharedNames;
     protected Program Program;
 
-    public ActionPredicateCloner(Program program, IndDatatypeDecl sharedState, ISet<string> sharedNames)
-      : base() {
-      SharedState = sharedState;
-      SharedStateType = new UserDefinedType(Token.NoToken, SharedState.Name, null);
-      TidType = new UserDefinedType(Token.NoToken, "Tid", null);
+    public TwoStateActionExpressionCloner(Program program, ISet<string> sharedNames) {
       SharedNames = sharedNames;
       Program = program;
     }
 
-    public Expression ReferencePreState(IToken tok, string name) {
+    public virtual Expression ReferencePreState(IToken tok, string name) {
       return new ExprDotName(tok, new NameSegment(tok, "s", null), name, null);
     }
 
-    public Expression ReferencePostState(IToken tok, string name) {
+    public virtual Expression ReferencePostState(IToken tok, string name) {
       return new ExprDotName(tok, new NameSegment(tok, "s'", null), name, null);
     }
 
@@ -2248,6 +2596,19 @@ namespace Microsoft.Dafny
       }
 
       return base.CloneExpr(expr);
+    }
+  }
+  
+  class ActionPredicateCloner : TwoStateActionExpressionCloner {
+    protected IndDatatypeDecl SharedState;
+    protected Type SharedStateType;
+    protected Type TidType;
+    
+    public ActionPredicateCloner(Program program, IndDatatypeDecl sharedState, ISet<string> sharedNames)
+      : base(program, sharedNames) {
+      SharedState = sharedState;
+      SharedStateType = new UserDefinedType(Token.NoToken, SharedState.Name, null);
+      TidType = new UserDefinedType(Token.NoToken, "Tid", null);
     }
 
     public Function CloneActionPredicate(ActionPredicate ap) {
@@ -2389,9 +2750,11 @@ namespace Microsoft.Dafny
             }
             args.Add(postBodyCloner.CloneExpr(outVar));
           }
+          Expression actionChosen = ParseExpression($"a.Action{calleeName}?");
           Expression actionPredicateCall = new ApplySuffix(Token.NoToken, new NameSegment(Token.NoToken, calleeName, null), args);
+          Expression conj = new BinaryExpr(Token.NoToken, BinaryExpr.Opcode.And, actionChosen, actionPredicateCall);
           Expression pcAssertion = ParseExpression(String.Format("t'.locals[tid].pc == {0}", ActionRewriter.PCName(am.Name, i + 1)));
-          Expression conj = new BinaryExpr(Token.NoToken, BinaryExpr.Opcode.And, actionPredicateCall, pcAssertion);
+          conj = new BinaryExpr(Token.NoToken, BinaryExpr.Opcode.And, conj, pcAssertion);
 
           foreach (LocalVariable lv in locals) {
             if (!modifiedVars.Contains(lv.Name)) {
@@ -2421,6 +2784,8 @@ namespace Microsoft.Dafny
       formals.Add(new Formal(Token.NoToken, "tid", TidType, true, false));
       formals.Add(new Formal(Token.NoToken, "t", ActionRewriter.ReferToTotalState(am.Name), true, false));
       formals.Add(new Formal(Token.NoToken, "t'", ActionRewriter.ReferToTotalState(am.Name), true, false));
+      formals.Add(new Formal(Token.NoToken, "a", new UserDefinedType(Token.NoToken, "Action", null), true, false));
+
       var req = new List<Expression>();
       req.Add(ParseExpression("tid in t.locals"));
       

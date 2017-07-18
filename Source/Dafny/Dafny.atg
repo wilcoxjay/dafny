@@ -1205,8 +1205,8 @@ FieldDecl<.DeclModifierData dmod, List<MemberDecl/*!*/>/*!*/ mm.>
   SYNC
   "var"
   { Attribute<ref attrs> }
-  FIdentType<out id, out ty>                        (. mm.Add(new Field(id, id.val, dmod.IsGhost, ty, attrs)); .)
-  { "," FIdentType<out id, out ty>                  (. mm.Add(new Field(id, id.val, dmod.IsGhost, ty, attrs)); .)
+  FIdentType<out id, out ty>                        (. mm.Add(new Field(id, id.val, dmod.IsGhost, ty, attrs, dmod.IsExtern)); .)
+  { "," FIdentType<out id, out ty>                  (. mm.Add(new Field(id, id.val, dmod.IsGhost, ty, attrs, dmod.IsExtern)); .)
   }
   OldSemi
   .

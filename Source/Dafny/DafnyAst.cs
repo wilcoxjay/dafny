@@ -3978,6 +3978,7 @@ namespace Microsoft.Dafny {
     public override string WhatKind { get { return "field"; } }
     public readonly bool IsMutable;  // says whether or not the field can ever change values
     public readonly bool IsUserMutable;  // says whether or not code is allowed to assign to the field (IsUserMutable implies IsMutable)
+    public readonly bool IsExternal;
     public readonly Type Type;
     [ContractInvariantMethod]
     void ObjectInvariant() {
@@ -3985,14 +3986,14 @@ namespace Microsoft.Dafny {
       Contract.Invariant(!IsUserMutable || IsMutable);  // IsUserMutable ==> IsMutable
     }
 
-    public Field(IToken tok, string name, bool isGhost, Type type, Attributes attributes)
-      : this(tok, name, false, isGhost, true, true, type, attributes) {
+    public Field(IToken tok, string name, bool isGhost, Type type, Attributes attributes, bool isExternal = false)
+      : this(tok, name, false, isGhost, true, true, type, attributes, isExternal) {
       Contract.Requires(tok != null);
       Contract.Requires(name != null);
       Contract.Requires(type != null);
     }
 
-    public Field(IToken tok, string name, bool hasStaticKeyword, bool isGhost, bool isMutable, bool isUserMutable, Type type, Attributes attributes)
+    public Field(IToken tok, string name, bool hasStaticKeyword, bool isGhost, bool isMutable, bool isUserMutable, Type type, Attributes attributes, bool isExternal = false)
       : base(tok, name, hasStaticKeyword, isGhost, attributes) {
       Contract.Requires(tok != null);
       Contract.Requires(name != null);
@@ -4000,6 +4001,7 @@ namespace Microsoft.Dafny {
       Contract.Requires(!isUserMutable || isMutable);
       IsMutable = isMutable;
       IsUserMutable = isUserMutable;
+      IsExternal = isExternal;
       Type = type;
     }
   }
