@@ -2233,7 +2233,7 @@ namespace Microsoft.Dafny {
             TrExpr(b.UpperBound, wr, inLetExprBody);
           }
           wr.WriteLine(")) {{ @{1} = {0};", tmpVar, bv.CompileName);
-        } else if (bound is AssignSuchThatStmt.WiggleWaggleBound) {
+        } else if (bound is ComprehensionExpr.WiggleWaggleBound) {
           wr.WriteLine("foreach (var {0} in Dafny.Helpers.AllIntegers) {{ @{1} = {0};", tmpVar, bv.CompileName);
         } else if (bound is ComprehensionExpr.SetBoundedPool) {
           var b = (ComprehensionExpr.SetBoundedPool)bound;

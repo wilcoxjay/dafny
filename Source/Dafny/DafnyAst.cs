@@ -6013,16 +6013,7 @@ namespace Microsoft.Dafny {
     // invariant Bounds == null || Bounds.Count == BoundVars.Count;
     public List<IVariable> MissingBounds;  // filled in during resolution; remains "null" if bounds can be found
     // invariant Bounds == null || MissingBounds == null;
-    public class WiggleWaggleBound : ComprehensionExpr.BoundedPool
-    {
-      public override bool IsFinite {
-        get { return false; }
-      }
-      public override int Preference() {
-        return 0;
-      }
-    }
-
+    
     /// <summary>
     /// "assumeToken" is allowed to be "null", in which case the verifier will check that a RHS value exists.
     /// If "assumeToken" is non-null, then it should denote the "assume" keyword used in the statement.
@@ -9212,6 +9203,15 @@ namespace Microsoft.Dafny {
       public DatatypeBoundedPool(DatatypeDecl d) { Decl = d; }
       public override int Preference() {
         return 5;
+      }
+    }
+    public class WiggleWaggleBound : BoundedPool
+    {
+      public override bool IsFinite {
+        get { return false; }
+      }
+      public override int Preference() {
+        return 0;
       }
     }
 

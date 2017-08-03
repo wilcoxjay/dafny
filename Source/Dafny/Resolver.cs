@@ -12749,7 +12749,7 @@ namespace Microsoft.Dafny
       } else if (bv.Type.IsIndDatatype && bv.Type.AsIndDatatype.HasFinitePossibleValues) {
         bounds.Add(new ComprehensionExpr.DatatypeBoundedPool(bv.Type.AsIndDatatype));
       } else if (bv.Type.IsNumericBased(Type.NumericPersuation.Int)) {
-        bounds.Add(new AssignSuchThatStmt.WiggleWaggleBound());
+        bounds.Add(new ComprehensionExpr.WiggleWaggleBound());
       }
 
       // Go through the conjuncts of the range expression to look for bounds.
