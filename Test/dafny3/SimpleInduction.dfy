@@ -1,4 +1,4 @@
-// RUN: %dafny /compile:0 /dprint:"%t.dprint" "%s" > "%t"
+// RUN: %dafny /compile:0 /dprint:"%t.dprint" /print:"%t.print" /proverLog:"%t.log" /rlimit:100000 "%s" > "%t"
 // RUN: %diff "%s.expect" "%t"
 
 /*
@@ -9,6 +9,7 @@
   proof.
   */
 
+/*
 function Fib(n: nat): nat
   decreases n;
 { if n < 2 then n else Fib(n-2) + Fib(n-1) }
@@ -86,3 +87,28 @@ lemma AppendIsAssociative_Auto(xs: List, ys: List, zs: List)
 {
 }
 
+*/
+
+function IsEven(a : int) : bool
+    requires a >= 0
+{
+    if a == 0 then      true 
+    else if a == 1 then false 
+    else                IsEven(a - 2)
+}
+
+lemma {:induction x} EvenPlus(x: int, y: int)
+    requires x >= 0
+    requires y >= 0
+    requires IsEven(x)
+    requires IsEven(y)
+    ensures IsEven(x + y)
+{ }
+
+lemma {:induction x, y} EvenPlus3(x: int, y: int)
+    requires x >= 0
+    requires y >= 0
+    requires IsEven(x)
+    requires IsEven(y)
+    ensures IsEven(x + y)
+{ }
