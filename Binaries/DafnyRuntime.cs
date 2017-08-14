@@ -1135,6 +1135,27 @@ namespace Dafny
         }
       }
     }
+    public static IEnumerable<Sequence<T>> AllNTuples(IEnumerable<T> iter, int n) {
+      
+    }
+    public static IEnumerable<Sequence<T>> AllSequences(IEnumerable<T> iter) {
+      var in_progress = new List<IEnumerator<T>>();
+      var done = new List<IEnumerator<T>();
+      while (true) {
+        in_progress.Add(iter.GetEnumerator());
+        done.Clear();
+        foreach (var e in in_progress) {
+          if (e.MoveNext()) {
+            yield return e.Current;
+          } else {
+            done.Add(e);
+          }
+        }
+        foreach (var d in done) {
+          in_progress.Remove(d);
+        }
+      }
+    }
     public static IEnumerable<BigInteger> IntegerRange(Nullable<BigInteger> lo, Nullable<BigInteger> hi) {
       if (lo == null) {
         for (var j = (BigInteger)hi; true; ) {

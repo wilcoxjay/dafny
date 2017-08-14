@@ -2210,57 +2210,12 @@ namespace Microsoft.Dafny {
         }
         var tmpVar = idGenerator.FreshId("_assign_such_that_");
         Indent(ind, wr);
-        if (bound is ComprehensionExpr.BoolBoundedPool) {
-          wr.WriteLine("foreach (var {0} in Dafny.Helpers.AllBooleans) {{ @{1} = {0};", tmpVar, bv.CompileName);
-        } else if (bound is ComprehensionExpr.CharBoundedPool) {
-          wr.WriteLine("foreach (var {0} in Dafny.Helpers.AllChars) {{ @{1} = {0};", tmpVar, bv.CompileName);
-        } else if (bound is ComprehensionExpr.IntBoundedPool) {
-          var b = (ComprehensionExpr.IntBoundedPool)bound;
-          if (AsNativeType(bv.Type) != null) {
-            wr.Write("foreach (var @{0} in @{1}.IntegerRange(", tmpVar, bv.Type.AsNewtype.FullCompileName);
-          } else {
-            wr.Write("foreach (var @{0} in Dafny.Helpers.IntegerRange(", tmpVar);
-          }
-          if (b.LowerBound == null) {
-            wr.Write("null");
-          } else {
-            TrExpr(b.LowerBound, wr, inLetExprBody);
-          }
-          wr.Write(", ");
-          if (b.UpperBound == null) {
-            wr.Write("null");
-          } else {
-            TrExpr(b.UpperBound, wr, inLetExprBody);
-          }
-          wr.WriteLine(")) {{ @{1} = {0};", tmpVar, bv.CompileName);
-        } else if (bound is ComprehensionExpr.WiggleWaggleBound) {
-          wr.WriteLine("foreach (var {0} in Dafny.Helpers.AllIntegers) {{ @{1} = {0};", tmpVar, bv.CompileName);
-        } else if (bound is ComprehensionExpr.SetBoundedPool) {
-          var b = (ComprehensionExpr.SetBoundedPool)bound;
-          wr.Write("foreach (var {0} in (", tmpVar);
-          TrExpr(b.Set, wr, inLetExprBody);
-          wr.WriteLine(").Elements) {{ @{0} = {1};", bv.CompileName, tmpVar);
-        } else if (bound is ComprehensionExpr.SubSetBoundedPool) {
-          var b = (ComprehensionExpr.SubSetBoundedPool)bound;
-          wr.Write("foreach (var {0} in (", tmpVar);
-          TrExpr(b.UpperBound, wr, inLetExprBody);
-          wr.WriteLine(").AllSubsets) {{ @{0} = {1};", bv.CompileName, tmpVar);
-        } else if (bound is ComprehensionExpr.MapBoundedPool) {
-          var b = (ComprehensionExpr.MapBoundedPool)bound;
-          wr.Write("foreach (var {0} in (", tmpVar);
-          TrExpr(b.Map, wr, inLetExprBody);
-          wr.WriteLine(").Domain) {{ @{0} = {1};", bv.CompileName, tmpVar);
-        } else if (bound is ComprehensionExpr.SeqBoundedPool) {
-          var b = (ComprehensionExpr.SeqBoundedPool)bound;
-          wr.Write("foreach (var {0} in (", tmpVar);
-          TrExpr(b.Seq, wr, inLetExprBody);
-          wr.WriteLine(").Elements) {{ @{0} = {1};", bv.CompileName, tmpVar);
-        } else if (bound is ComprehensionExpr.DatatypeBoundedPool) {
-          var b = (ComprehensionExpr.DatatypeBoundedPool)bound;
-          wr.WriteLine("foreach (var {0} in {1}.AllSingletonConstructors) {{ @{2} = {0};", tmpVar, TypeName(bv.Type, wr, bv.Tok), bv.CompileName);
-        } else {
-          Contract.Assert(false); throw new cce.UnreachableException();  // unexpected BoundedPool type
-        }
+        wr.Write("foreach (var {0} in ", tmpVar);
+        TrBoundedPool(bound, bv, wr, inLetExprBody);
+        wr.WriteLine(") {");
+        Indent(ind + IndentAmount, wr);
+        wr.WriteLine("@{0} = {1};", bv.CompileName, tmpVar);
+        
         if (needIterLimit) {
           Indent(ind + IndentAmount, wr);
           wr.WriteLine("if ({0}_{1} == 0) {{ break; }}  {0}_{1}--;", iterLimit, i);
@@ -2283,6 +2238,60 @@ namespace Microsoft.Dafny {
       wr.WriteLine("throw new System.Exception(\"assign-such-that search produced no value (line {0})\");", debuginfoLine);
       Indent(indent, wr);
       wr.WriteLine("{0}: ;", doneLabel);
+    }
+
+    private void TrBoundedPool(ComprehensionExpr.BoundedPool bound, IVariable bv, TextWriter wr, bool inLetExprBody) {
+      if (bound is ComprehensionExpr.BoolBoundedPool) {
+        wr.Write("Dafny.Helpers.AllBooleans");
+      } else if (bound is ComprehensionExpr.CharBoundedPool) {
+        wr.Write("Dafny.Helpers.AllChars");
+      } else if (bound is ComprehensionExpr.IntBoundedPool) {
+        var b = (ComprehensionExpr.IntBoundedPool)bound;
+        if (AsNativeType(bv.Type) != null) {
+          wr.Write("@{0}.IntegerRange(", bv.Type.AsNewtype.FullCompileName);
+        } else {
+          wr.Write("Dafny.Helpers.IntegerRange(");
+        }
+        if (b.LowerBound == null) {
+          wr.Write("null");
+        } else {
+          TrExpr(b.LowerBound, wr, inLetExprBody);
+        }
+        wr.Write(", ");
+        if (b.UpperBound == null) {
+          wr.Write("null");
+        } else {
+          TrExpr(b.UpperBound, wr, inLetExprBody);
+        }
+        wr.Write(")");
+      } else if (bound is ComprehensionExpr.WiggleWaggleBound) {
+        wr.Write("Dafny.Helpers.AllIntegers");
+      } else if (bound is ComprehensionExpr.SetBoundedPool) {
+        var b = (ComprehensionExpr.SetBoundedPool)bound;
+        wr.Write("(");
+        TrExpr(b.Set, wr, inLetExprBody);
+        wr.Write(").Elements");
+      } else if (bound is ComprehensionExpr.SubSetBoundedPool) {
+        var b = (ComprehensionExpr.SubSetBoundedPool)bound;
+        wr.Write("(");
+        TrExpr(b.UpperBound, wr, inLetExprBody);
+        wr.Write(").AllSubsets");
+      } else if (bound is ComprehensionExpr.MapBoundedPool) {
+        var b = (ComprehensionExpr.MapBoundedPool)bound;
+        wr.Write("(");
+        TrExpr(b.Map, wr, inLetExprBody);
+        wr.Write(").Domain");
+      } else if (bound is ComprehensionExpr.SeqBoundedPool) {
+        var b = (ComprehensionExpr.SeqBoundedPool)bound;
+        wr.Write("(");
+        TrExpr(b.Seq, wr, inLetExprBody);
+        wr.Write(").Elements");
+      } else if (bound is ComprehensionExpr.DatatypeBoundedPool) {
+        var b = (ComprehensionExpr.DatatypeBoundedPool)bound;
+        wr.Write("{1}.AllSingletonConstructors", TypeName(bv.Type, wr, bv.Tok));
+      } else {
+        Contract.Assert(false); throw new cce.UnreachableException();  // unexpected BoundedPool type
+      }
     }
 
     string CreateLvalue(Expression lhs, int indent, TextWriter wr) {
