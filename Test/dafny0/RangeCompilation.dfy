@@ -17,6 +17,21 @@ predicate method GoodString(s: string) {
     |s| > 0 && s[0] == 'x'
 }
 
+predicate t(x: int) {
+    true
+}
+lemma PairExists()
+    ensures exists p: (int, int) :: 0 <= p.0 <= 10 && 0 <= p.1 <= 10
+{
+    var _ := (1, 1);
+}
+
+lemma SingletonExists()
+    ensures exists l: seq<int> :: |l| > 0 && 0 <= l[0] <= 10
+{
+    var _ := |[1]|;
+}
+
 method Main() {
   assert GoodByte(11) && GoodInteger(24);
   var b: Byte :| GoodByte(b);
@@ -32,6 +47,12 @@ method Main() {
   assert GoodString("xylophone");
   var my_strings: seq<string> := ["hello", "xylophone", "abc"];
   var s: string :| s in my_strings && GoodString(s);
+
+  PairExists();
+  var p: (int, int) :| 0 <= p.0 <= 10 && 0 <= p.1 <= 10;
+
+  SingletonExists();
+  var l: seq<int> :| |l| > 0 && 0 <= l[0] <= 10;
 }
 
 class MyClass { }
