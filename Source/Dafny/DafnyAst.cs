@@ -8701,7 +8701,9 @@ namespace Microsoft.Dafny {
       MapUnion,
       // datatypes
       RankLt,
-      RankGt
+      RankGt,
+      IndDatatypeEq,
+      IndDatatypeNeq
     }
     private ResolvedOpcode _theResolvedOp = ResolvedOpcode.YetUndetermined;
     public ResolvedOpcode ResolvedOp {

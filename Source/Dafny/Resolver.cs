@@ -13241,6 +13241,8 @@ namespace Microsoft.Dafny
             return BinaryExpr.ResolvedOpcode.SeqEq;
           } else if (operandType is MapType) {
             return BinaryExpr.ResolvedOpcode.MapEq;
+          } else if (operandType.IsIndDatatype) {
+            return BinaryExpr.ResolvedOpcode.IndDatatypeEq;
           } else {
             return BinaryExpr.ResolvedOpcode.EqCommon;
           }
@@ -13253,6 +13255,8 @@ namespace Microsoft.Dafny
             return BinaryExpr.ResolvedOpcode.SeqNeq;
           } else if (operandType is MapType) {
             return BinaryExpr.ResolvedOpcode.MapNeq;
+          } else if (operandType.IsIndDatatype) {
+            return BinaryExpr.ResolvedOpcode.IndDatatypeNeq;
           } else {
             return BinaryExpr.ResolvedOpcode.NeqCommon;
           }

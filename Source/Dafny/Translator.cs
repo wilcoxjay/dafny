@@ -13805,6 +13805,11 @@ namespace Microsoft.Dafny {
                 translator.FunctionCall(expr.tok, BuiltinFunction.DtRank, null, e0),
                 translator.FunctionCall(expr.tok, e.E1.Type.IsDatatype ? BuiltinFunction.DtRank: BuiltinFunction.BoxRank, null, e1));
 
+            case BinaryExpr.ResolvedOpcode.DatatypeEq:
+              return translator.FunctionCall(expr.tok, , null, e0, e1);
+            case BinaryExpr.ResolvedOpcode.IndDatatypeNeq:
+               return Bpl.Expr.Unary(expr.tok, UnaryOperator.Opcode.Not, translator.FunctionCall(expr.tok, , null, e0, e1));
+
             default:
               Contract.Assert(false); throw new cce.UnreachableException();  // unexpected binary expression
           }
