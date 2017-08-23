@@ -70,5 +70,8 @@ Datatypes.dfy(225,16): Error: destructor 'c' can only be applied to datatype val
 Execution trace:
     (0,0): anon0
     (0,0): anon5_Then
+Datatypes.dfy(382,26): Error: assertion violation
+Execution trace:
+    (0,0): anon0
 
-Dafny program verifier finished with 21 verified, 13 errors
+Dafny program verifier finished with 21 verified, 14 errors

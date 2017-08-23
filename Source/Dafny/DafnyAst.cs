@@ -7564,6 +7564,8 @@ namespace Microsoft.Dafny {
         eq.ResolvedOp = BinaryExpr.ResolvedOpcode.InMultiSet;
       } else if (ty is MapType) {
         eq.ResolvedOp = BinaryExpr.ResolvedOpcode.MapEq;
+      } else if (ty.IsIndDatatype) {
+        eq.ResolvedOp = BinaryExpr.ResolvedOpcode.IndDatatypeEq;
       } else {
         eq.ResolvedOp = BinaryExpr.ResolvedOpcode.EqCommon;
       }
@@ -8726,6 +8728,7 @@ namespace Microsoft.Dafny {
         case ResolvedOpcode.SeqEq:
         case ResolvedOpcode.MultiSetEq:
         case ResolvedOpcode.MapEq:
+        case ResolvedOpcode.IndDatatypeEq:
           return true;
         default:
           return false;
@@ -8744,6 +8747,7 @@ namespace Microsoft.Dafny {
         case ResolvedOpcode.MultiSetEq:
         case ResolvedOpcode.SeqEq:
         case ResolvedOpcode.MapEq:
+        case ResolvedOpcode.IndDatatypeEq:
           return Opcode.Eq;
 
         case ResolvedOpcode.NeqCommon:
@@ -8751,6 +8755,7 @@ namespace Microsoft.Dafny {
         case ResolvedOpcode.MultiSetNeq:
         case ResolvedOpcode.SeqNeq:
         case ResolvedOpcode.MapNeq:
+        case ResolvedOpcode.IndDatatypeNeq:
           return Opcode.Neq;
 
         case ResolvedOpcode.Lt:

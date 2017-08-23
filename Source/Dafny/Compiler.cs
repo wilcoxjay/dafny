@@ -3102,11 +3102,13 @@ namespace Microsoft.Dafny {
           case BinaryExpr.ResolvedOpcode.MultiSetEq:
           case BinaryExpr.ResolvedOpcode.SeqEq:
           case BinaryExpr.ResolvedOpcode.MapEq:
+          case BinaryExpr.ResolvedOpcode.IndDatatypeEq:
             callString = "Equals"; break;
           case BinaryExpr.ResolvedOpcode.SetNeq:
           case BinaryExpr.ResolvedOpcode.MultiSetNeq:
           case BinaryExpr.ResolvedOpcode.SeqNeq:
           case BinaryExpr.ResolvedOpcode.MapNeq:
+          case BinaryExpr.ResolvedOpcode.IndDatatypeNeq:
             preOpString = "!"; callString = "Equals"; break;
           case BinaryExpr.ResolvedOpcode.ProperSubset:
           case BinaryExpr.ResolvedOpcode.ProperMultiSubset:

@@ -377,3 +377,7 @@ module LetPatterns {
     var w := v + var AAA(u) := m; u;  // error: m may not be an AAA
   }
 }
+
+method NotEverythingIsEqual() {
+    assert XCons(0, XNil) == XCons(1, XNil);  // error
+}

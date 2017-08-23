@@ -113,8 +113,13 @@ class Benchmark3 {
     assert q.contents == old(q.contents)[k..] + old(q.contents)[..k];
     ghost var qq := q.contents;
     m := q.Dequeue();
-    assert m == qq[0];
-    assert [m] + q.contents == qq && q.contents == qq[1..];
+
+    calc {
+        q.contents; 
+        qq[1..];
+        (old(q.contents)[k..] + old(q.contents)[..k])[1..];
+        old(q.contents)[k+1..] + old(q.contents)[..k];
+    }
   }
 
   lemma RotationLemma(O: seq, j: nat, A: seq, C: seq)
