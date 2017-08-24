@@ -1542,9 +1542,9 @@ namespace Microsoft.Dafny {
       }
 
       if (dt is IndDatatypeDecl) {
-        // Add function Dt#Equal(d1: DatatypeType, d2: DatatypeType): bool {
-        //     Dt.Ctor0#Equal(d1, d2) || Dt.Ctor1#Equal(d1, d2) || ...
-        // }
+        // Add function Dt#Equal(d1: DatatypeType, d2: DatatypeType): bool; 
+        // And axioms of the form
+        //     forall d1, d2 ::  Dt.Ctor0#Equal(d1, d2) ==> Dt#Equal(d1, d2)
         {
           var args = new List<Variable>();
           args.Add(new Bpl.Formal(dt.tok, new Bpl.TypedIdent(dt.tok, Bpl.TypedIdent.NoName, predef.DatatypeType), false));
@@ -1555,15 +1555,13 @@ namespace Microsoft.Dafny {
           Bpl.Expr d1; var d1Var = BplBoundVar("d1", predef.DatatypeType, out d1);
           Bpl.Expr d2; var d2Var = BplBoundVar("d2", predef.DatatypeType, out d2);
 
-          var lhs = FunctionCall(dt.tok, dt.FullSanitizedName + "#Equal", Bpl.Type.Bool, d1, d2);
-          Bpl.Expr rhs = Bpl.Expr.False;
+          var rhs = FunctionCall(dt.tok, dt.FullSanitizedName + "#Equal", Bpl.Type.Bool, d1, d2);
 
           foreach (DatatypeCtor ctor in dt.Ctors) {
-            rhs = BplOr(rhs, FunctionCall(dt.tok, ctor.FullName + "#Equal", Bpl.Type.Bool, d1, d2));
+            var lhs = FunctionCall(dt.tok, ctor.FullName + "#Equal", Bpl.Type.Bool, d1, d2);
+            var ax = BplForall(new List<Variable> { d1Var, d2Var }, BplTrigger(rhs), Bpl.Expr.Imp(lhs, rhs));
+            sink.AddTopLevelDeclaration(new Bpl.Axiom(dt.tok, ax, "Datatype extensional equality definition")); 
           }
-
-          var ax = BplForall(new List<Variable> { d1Var, d2Var }, BplTrigger(lhs), Bpl.Expr.Eq(lhs, rhs));
-          sink.AddTopLevelDeclaration(new Bpl.Axiom(dt.tok, ax, "Datatype extensional equality definition"));
         }
 
         // Add extensionality axiom: forall d1, d2 :: { Dt#Equal(d1, d2) } Dt#Equal(d1, d2) ==> d1 == d2
