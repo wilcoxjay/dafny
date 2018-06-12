@@ -6580,7 +6580,7 @@ namespace Microsoft.Dafny {
           }
           if (e.E1 != null) {
             CheckWellformed(e.E1, options, locals, builder, etran);
-            builder.Add(Assert(expr.tok, InSeqRange(expr.tok, etran.TrExpr(e.E1), seq, isSequence, e0, true), "upper bound " + (e.E0 == null ? "" : "below lower bound or ") + "above length of " + (isSequence ? "sequence" : "array"), options.AssertKv));
+            builder.Add(Assert(expr.tok, InSeqRange(expr.tok, etran.TrExpr(e.E1), seq, isSequence, e0, true), "upper bound below " + (e.E0 == null ? "zero" : "lower bound") + " or above length of " + (isSequence ? "sequence" : "array"), options.AssertKv));
           }
         }
         if (options.DoReadsChecks && eSeqType.IsArrayType) {
